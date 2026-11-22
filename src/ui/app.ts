@@ -7,7 +7,7 @@
 import { CAPABILITY_LEXICON } from '../data/lexicon.ts';
 import { PRESET_DATASETS } from '../data/presets.ts';
 import { harvestWebCorpus, type WebSourceId } from '../data/webSearch.ts';
-import { fitLsaSpace, type LsaModelResult } from '../science/lsa.ts';
+import { buildDomainNativeLexicon, fitLsaSpace, type LsaModelResult } from '../science/lsa.ts';
 import { cosineSim, normalizeInPlace } from '../science/math.ts';
 import {
   evaluateGapCandidate,
@@ -21,6 +21,7 @@ import type {
   CorpusItem,
   EmbeddingEngineKind,
   GapCandidate,
+  LexiconConcept,
 } from '../types.ts';
 
 interface NeuralWorkerMessage {
@@ -54,6 +55,7 @@ export class VoidLensApp {
   };
 
   private lsaModel: LsaModelResult | null = null;
+  private activeLexicon: LexiconConcept[] = CAPABILITY_LEXICON;
   private neuralCorpusVectors: Float64Array[] | null = null;
   private neuralLexiconVectors: Float64Array[] | null = null;
   private neuralWorker: Worker | null = null;
@@ -369,10 +371,15 @@ export class VoidLensApp {
     this.el('corpus-count').textContent = String(items.length);
     this.customGap = null;
     this.neuralCorpusVectors = null;
+    this.neuralLexiconVectors = null;
 
-    // Fit instant local scientific LSA-SVD model (also gives cluster keyword extractor!)
+    // Build domain-native lexicon directly from the corpus + gated cross-domain primitives
+    const nativeLex = buildDomainNativeLexicon(items, 65);
+    this.activeLexicon = [...nativeLex, ...CAPABILITY_LEXICON];
+
+    // Fit instant local scientific LSA-SVD model (also gives unstemmed cluster keyword extractor!)
     const corpusTexts = items.map((it) => `${it.title}. ${it.summary} ${(it.tags ?? []).join(' ')}`);
-    const lexiconTexts = CAPABILITY_LEXICON.map((l) => `${l.term}. ${l.domain}. ${l.description}`);
+    const lexiconTexts = this.activeLexicon.map((l) => `${l.term}. ${l.domain}. ${l.description}`);
     this.lsaModel = fitLsaSpace(corpusTexts, lexiconTexts, Math.min(36, Math.max(10, items.length - 2)));
 
     if (this.engine === 'neural-minilm' && this.neuralReady) {
@@ -461,8 +468,8 @@ export class VoidLensApp {
     );
 
     if (!this.neuralLexiconVectors) {
-      this.showNeuralProgress('Embedding cross-domain lexicon (384-D)…', 55);
-      const lexTexts = CAPABILITY_LEXICON.map((l) => `${l.term}: ${l.description}`);
+      this.showNeuralProgress('Embedding domain + cross-domain lexicon (384-D)…', 55);
+      const lexTexts = this.activeLexicon.map((l) => `${l.term}: ${l.description}`);
       const lexRes = await this.callWorker({ type: 'embed', texts: lexTexts });
       this.neuralLexiconVectors = (lexRes.vectors ?? []).map((v) =>
         normalizeInPlace(new Float64Array(v))
@@ -503,7 +510,7 @@ export class VoidLensApp {
       engine: useNeural ? 'neural-minilm' : 'lsa-svd',
       items: this.items,
       vectors,
-      lexicon: CAPABILITY_LEXICON,
+      lexicon: this.activeLexicon,
       lexiconVectors,
       extractKeywords: this.lsaModel.extractTopKeywords,
       config: this.config,
@@ -632,29 +639,34 @@ export class VoidLensApp {
 
     let completed = 0;
     try {
-      const harvested = await harvestWebCorpus(query, sources, 13, (p) => {
-        if (p.status === 'done' || p.status === 'error') {
-          completed++;
-          const pct = 20 + Math.round((completed / sources.length) * 70);
-          this.showNeuralProgress(
-            p.status === 'done'
-              ? `Fetched ${p.fetched} from ${p.source} (${completed}/${sources.length})…`
-              : `${p.source} skipped (${p.message}), continuing…`,
-            pct
-          );
-        }
-        if (dialog?.open) {
-          if (p.status === 'done') {
-            statusBox.textContent += `✓ ${p.source}: fetched ${p.fetched} items\n`;
-          } else if (p.status === 'error') {
-            statusBox.textContent += `✗ ${p.source}: ${p.message}\n`;
+      const { items: harvested, resolvedQuery, wasCorrected } = await harvestWebCorpus(
+        query,
+        sources,
+        13,
+        (p) => {
+          if (p.status === 'done' || p.status === 'error') {
+            completed++;
+            const pct = 20 + Math.round((completed / sources.length) * 70);
+            this.showNeuralProgress(
+              p.status === 'done'
+                ? `Fetched ${p.fetched} from ${p.source} (${completed}/${sources.length})…`
+                : `${p.source} skipped (${p.message}), continuing…`,
+              pct
+            );
+          }
+          if (dialog?.open) {
+            if (p.status === 'done') {
+              statusBox.textContent += `✓ ${p.source}: fetched ${p.fetched} items\n`;
+            } else if (p.status === 'error') {
+              statusBox.textContent += `✗ ${p.source}: ${p.message}\n`;
+            }
           }
         }
-      });
+      );
 
       if (harvested.length < 5 && mode === 'replace') {
         this.hideNeuralProgress();
-        const msg = `Only ${harvested.length} items returned for "${query}" — try broader keywords or Merge mode.`;
+        const msg = `Only ${harvested.length} relevant items found for "${resolvedQuery}" — try broader keywords or Merge mode.`;
         if (dialog?.open) statusBox.textContent += `\n${msg}`;
         this.showToast(msg);
         return;
@@ -663,12 +675,13 @@ export class VoidLensApp {
       const finalItems =
         mode === 'merge' ? [...this.items, ...harvested].slice(0, 120) : harvested.slice(0, 100);
       dialog?.close();
-      this.el<HTMLInputElement>('quick-topic-input').value = query;
-      this.populatePresets(query);
+      this.el<HTMLInputElement>('quick-topic-input').value = resolvedQuery;
+      this.populatePresets(resolvedQuery);
       await this.setCorpus(finalItems);
       this.hideNeuralProgress();
+      const correctionNote = wasCorrected ? ` (auto-corrected from "${query}")` : '';
       this.showToast(
-        `Mapped ${finalItems.length} live concepts for "${query}" — found ${this.engineOutput?.result.gaps.length ?? 0} gaps!`
+        `Mapped ${finalItems.length} concepts for "${resolvedQuery}"${correctionNote} — found ${this.engineOutput?.result.gaps.length ?? 0} gaps!`
       );
     } catch (err) {
       this.hideNeuralProgress();

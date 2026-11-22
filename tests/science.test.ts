@@ -11,7 +11,7 @@ import {
 } from '../src/science/math.ts';
 import { computeDelaunayAndAlphaShape } from '../src/science/geometry.ts';
 import { computePersistentHomology } from '../src/science/topology.ts';
-import { fitLsaSpace } from '../src/science/lsa.ts';
+import { buildDomainNativeLexicon, fitLsaSpace } from '../src/science/lsa.ts';
 import { runVectorGapAnalysis, vmfDensity, refineGapRiemannian } from '../src/science/gapEngine.ts';
 import { PRESET_DATASETS } from '../src/data/presets.ts';
 import { CAPABILITY_LEXICON } from '../src/data/lexicon.ts';
@@ -164,6 +164,52 @@ runTest('End-to-end Industrial PLC (2026) pipeline surfaces ranked high-dimensio
       `    #${i + 1} [${(g.opportunityScore * 100).toFixed(0)}%] ${g.synthesizedTitle} (${g.sourceMethod}, void=${g.metrics.nearestDistance.toFixed(2)})`
     );
   });
+});
+
+runTest('Non-engineering corpus uses domain-native concepts and never leaks factory jargon', () => {
+  const cinemaItems = [
+    { id: 'c1', title: 'Anyone But You', summary: 'Romantic comedy film starring Sydney Sweeney and Glen Powell set in Australia.', tags: ['Romantic comedy films'] },
+    { id: 'c2', title: 'Immaculate', summary: 'Psychological horror film starring and produced by Sydney Sweeney set in an Italian convent.', tags: ['Psychological horror films'] },
+    { id: 'c3', title: 'Reality', summary: 'Biographical thriller drama film based on the FBI interrogation transcript of Reality Winner.', tags: ['Biographical drama films'] },
+    { id: 'c4', title: 'Euphoria', summary: 'Teen drama television series on HBO exploring high school identity and relationships.', tags: ['HBO drama series'] },
+    { id: 'c5', title: 'The White Lotus', summary: 'Satirical anthology television series set at luxury vacation resorts.', tags: ['Satirical television series'] },
+    { id: 'c6', title: 'Madame Web', summary: 'Superhero action thriller film set in the Spider-Man universe.', tags: ['Superhero films'] },
+    { id: 'c7', title: 'Eden', summary: 'Survival thriller film directed by Ron Howard set on the Galapagos islands.', tags: ['Survival thriller films'] },
+    { id: 'c8', title: 'The Housemaid', summary: 'Psychological domestic thriller adaptation of the bestselling mystery novel.', tags: ['Psychological thriller films'] },
+    { id: 'c9', title: 'Fifty-Fifty Films', summary: 'Independent film production company founded to develop book adaptations and genre movies.', tags: ['Film production companies'] },
+    { id: 'c10', title: 'Luxury Fashion Campaigns', summary: 'Brand ambassador partnerships across couture fashion houses, denim retail, and beauty lines.', tags: ['Fashion marketing'] },
+  ];
+
+  const activeLex = [...buildDomainNativeLexicon(cinemaItems, 50), ...CAPABILITY_LEXICON];
+  const lsa = fitLsaSpace(
+    cinemaItems.map((i) => `${i.title}. ${i.summary} ${(i.tags ?? []).join(' ')}`),
+    activeLex.map((l) => `${l.term}. ${l.domain}. ${l.description}`),
+    10
+  );
+  const out = runVectorGapAnalysis({
+    engine: 'lsa-svd',
+    items: cinemaItems,
+    vectors: lsa.corpusVectors,
+    lexicon: activeLex,
+    lexiconVectors: lsa.lexiconVectors,
+    extractKeywords: lsa.extractTopKeywords,
+    config: {
+      projection: 'manifold',
+      numClusters: 4,
+      vmfKappa: 6,
+      topKGaps: 5,
+      weights: { sparsity: 0.38, bridgeEntropy: 0.3, coherence: 0.18, topology: 0.14 },
+    },
+  });
+
+  assert.ok(out.result.gaps.length >= 2);
+  const forbidden = /fieldbus|spare-parts|plug-and-produce|microgrid|fpga|neuromorphic|plc/i;
+  for (const g of out.result.gaps) {
+    assert.ok(!forbidden.test(g.synthesizedTitle), `Leaked industrial jargon: ${g.synthesizedTitle}`);
+    for (const d of g.decodedConcepts) {
+      assert.ok(!forbidden.test(d.term), `Leaked industrial concept: ${d.term}`);
+    }
+  }
 });
 
 console.log('\nAll mathematical verification tests passed!');

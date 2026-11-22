@@ -124,12 +124,20 @@ export function refineGapRiemannian(
 
 /**
  * Decode an arbitrary gap vector g in S^(d-1) back into ranked human-readable concepts
- * using Gram-Schmidt orthogonal residual projection + corpus novelty filtering.
+ * using Gram-Schmidt orthogonal residual projection + strict domain-relevance gating!
+ *
+ * Crucial scientific safeguard:
+ * - Domain-native concepts extracted directly from the current corpus (tags/categories/themes)
+ *   are always eligible and scored by alignment + local novelty relative to the bounding anchors.
+ * - Static cross-domain engineering lexicon primitives are ONLY admitted if they pass a strict
+ *   semantic relevance gate against BOTH the gap vector AND the domain centroid — preventing
+ *   industrial factory jargon from ever leaking onto non-engineering topics (e.g., cinema, pop culture)!
  */
 export function decodeGapVector(
   gapVec: Float64Array,
   nearestIndices: number[],
   corpusVectors: Float64Array[],
+  domainCentroid: Float64Array,
   lexicon: LexiconConcept[],
   lexiconVectors: Float64Array[],
   lexiconCorpusMaxSim: Float32Array,
@@ -143,13 +151,39 @@ export function decodeGapVector(
     const lv = lexiconVectors[m];
     if (!lv || lv.length !== gapVec.length) continue;
 
-    const sim = cosineSim(gapVec, lv);
-    const resAlign = cosineSim(residual, lv);
-    const maxCorpusSim = lexiconCorpusMaxSim[m];
-    // Novelty is high when concept is NOT already heavily covered by an existing offering
-    const novelty = Math.max(0, Math.min(1, 1 - Math.max(0, maxCorpusSim)));
+    const lvNorm = Math.sqrt(dot(lv, lv));
+    if (lvNorm < 0.25) continue; // Out-of-subspace concept has negligible real overlap with corpus!
 
-    // Combined score balances direct alignment with the void + orthogonal novelty
+    const sim = cosineSim(gapVec, lv);
+    const domainAlign = cosineSim(domainCentroid, lv);
+    const resAlign = cosineSim(residual, lv);
+    const isNative =
+      lexicon[m].domain === 'Domain Theme' ||
+      lexicon[m].domain === 'Domain Tag' ||
+      lexicon[m].domain === 'Corpus Concept' ||
+      lexicon[m].domain === 'Corpus Theme';
+
+    // Strict semantic domain-relevance gate for static engineering primitives!
+    // Never surface factory/cyber/robotics jargon if the corpus is in an unrelated domain!
+    if (!isNative && (sim < 0.26 || domainAlign < 0.18 || lexiconCorpusMaxSim[m] < 0.22)) {
+      continue;
+    }
+    if (isNative && sim < 0.08) {
+      continue;
+    }
+
+    // For domain-native themes, novelty measures how ABSENT the theme is from the nearest
+    // bounding neighbors (so we surface bridging concepts NOT already saturated at the gap edge!)
+    let localMaxSim = -1;
+    for (const bv of neighborBasis) {
+      const s = cosineSim(lv, bv);
+      if (s > localMaxSim) localMaxSim = s;
+    }
+    const maxCorpusSim = lexiconCorpusMaxSim[m];
+    const novelty = isNative
+      ? Math.max(0, Math.min(1, 1 - Math.max(0, localMaxSim)))
+      : Math.max(0, Math.min(1, 1 - Math.max(0, maxCorpusSim)));
+
     const combined =
       0.52 * Math.max(0, sim) +
       0.28 * Math.max(0, resAlign) +
@@ -167,13 +201,12 @@ export function decodeGapVector(
   }
 
   scored.sort((a, b) => b.combinedScore - a.combinedScore);
-  // Diversify across domains slightly so results are insightful rather than repetitive
   const picked: DecodedConceptMatch[] = [];
   const domainCounts = new Map<string, number>();
   for (const item of scored) {
     if (picked.length >= topK) break;
     const dc = domainCounts.get(item.domain) ?? 0;
-    if (dc >= 2 && picked.length < topK - 1) continue;
+    if (dc >= 3 && picked.length < topK - 1) continue;
     picked.push(item);
     domainCounts.set(item.domain, dc + 1);
   }
@@ -321,40 +354,49 @@ export function evaluateGapCandidate(
   const gate = 0.4 + 0.6 * Math.pow(coherence, 0.6);
   const opportunityScore = Math.max(0, Math.min(1, rawOpp * gate));
 
-  // 7. Decode gap vector via Orthogonal Concept Inversion
+  // 7. Decode gap vector via Orthogonal Concept Inversion (domain-gated!)
   const nearestIndices = sims.slice(0, 5).map((s) => s.index);
   const decodedConcepts = decodeGapVector(
     unitVec,
     nearestIndices,
     vectors,
+    domainCentroid,
     lexicon,
     lexiconVectors,
     lexiconCorpusMaxSim,
     5
   );
 
-  // Synthesize crisp human-readable title & scientific thesis
-  const topA = decodedConcepts[0]?.term ?? 'Latent Bridge Capability';
-  const topB = decodedConcepts[1]?.term;
+  // Synthesize crisp human-readable title & scientific thesis grounded in actual bridged clusters
   const c0 = bridgedClusters[0]?.label ?? 'Core Domain';
   const c1 = bridgedClusters[1]?.label;
+  const topA = decodedConcepts[0]?.term;
+  const topB = decodedConcepts[1]?.term;
 
   const synthesizedTitle =
-    topB && bridgedClusters.length >= 2
+    topA && topB && bridgedClusters.length >= 2
       ? `${topA} × ${topB}`
       : c1
-        ? `${topA} bridging ${c0}`
-        : `${topA} Frontier`;
+        ? `${c0} × ${c1}`
+        : topA
+          ? `${topA} Frontier`
+          : `${c0} Unexplored Niche`;
 
   const anchorNames = nearestIndices
     .slice(0, 3)
     .map((idx) => items[idx].title)
     .join('", "');
 
+  const missingPhrase = topA
+    ? `${topA.toLowerCase()}${topB ? ` with ${topB.toLowerCase()}` : ''}`
+    : c1
+      ? `${c0.toLowerCase()} with ${c1.toLowerCase()}`
+      : 'an unrepresented semantic bridge';
+
   const synthesizedHypothesis =
     bridgedClusters.length >= 2
-      ? `Structural hole detected between [${c0}] and [${c1}] (cosine void radius ${nearestDistance.toFixed(2)}, bridge entropy ${(bridgeEntropy * 100).toFixed(0)}%). Existing offerings ("${anchorNames}") surround this manifold region without uniting ${topA.toLowerCase()}${topB ? ` with ${topB.toLowerCase()}` : ''}.`
-      : `Low-density capability frontier adjacent to "${anchorNames}" (void radius ${nearestDistance.toFixed(2)}). Orthogonal residual projection highlights ${topA.toLowerCase()}${topB ? ` and ${topB.toLowerCase()}` : ''} as missing semantic dimensions.`;
+      ? `Structural hole detected between [${c0}] and [${c1}] (cosine void radius ${nearestDistance.toFixed(2)}, bridge entropy ${(bridgeEntropy * 100).toFixed(0)}%). Existing items ("${anchorNames}") surround this manifold region without uniting ${missingPhrase}.`
+      : `Low-density frontier adjacent to "${anchorNames}" (void radius ${nearestDistance.toFixed(2)}). Orthogonal residual projection highlights ${missingPhrase} as an underrepresented direction in this corpus.`;
 
   const pos2d = overridePos2d ?? projectOutOfSample(unitVec);
 
@@ -603,6 +645,7 @@ export function runVectorGapAnalysis(params: RunAnalysisParams): FullEngineOutpu
 
   // Non-Maximum Suppression (NMS) on S^(d-1) + 2D distance so every surfaced gap is distinct!
   const gaps: GapCandidate[] = [];
+  const usedTitles = new Set<string>();
   for (const cand of evaluated) {
     if (gaps.length >= config.topKGaps) break;
     // Ensure candidate isn't practically sitting on top of an existing offering
@@ -613,9 +656,26 @@ export function runVectorGapAnalysis(params: RunAnalysisParams): FullEngineOutpu
       return dSphere < 0.14 || d2d < 0.18;
     });
     if (tooClose) continue;
+
+    // Ensure every ranked gap card has a distinct, non-duplicate title
+    let title = cand.synthesizedTitle;
+    if (usedTitles.has(title.toLowerCase())) {
+      const altA = cand.decodedConcepts[0]?.term;
+      const altC = cand.decodedConcepts[2]?.term;
+      const bc0 = cand.bridgedClusters[0]?.label;
+      const bc1 = cand.bridgedClusters[1]?.label;
+      if (altA && altC && !usedTitles.has(`${altA} × ${altC}`.toLowerCase())) {
+        title = `${altA} × ${altC}`;
+      } else if (bc0 && bc1 && !usedTitles.has(`${bc0} ↔ ${bc1}`.toLowerCase())) {
+        title = `${bc0} ↔ ${bc1}`;
+      }
+    }
+    usedTitles.add(title.toLowerCase());
+
     gaps.push({
       ...cand,
       id: `gap-${gaps.length + 1}`,
+      synthesizedTitle: title,
     });
   }
 
