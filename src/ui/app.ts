@@ -948,6 +948,21 @@ export class VoidLensApp {
         <p class="insp-hypothesis">${escapeHtml(gap.synthesizedHypothesis)}</p>
       </div>
 
+      ${
+        gap.humanSummary
+          ? `
+      <div class="insp-section" style="background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.28);border-radius:8px;padding:0.65rem 0.75rem;">
+        <h3 style="color:#6ee7b7;margin-block-end:0.35rem;">Plain-English Opportunity Translation</h3>
+        <div style="font-size:0.77rem;display:flex;flex-direction:column;gap:0.32rem;color:var(--text-1);">
+          <div><strong style="color:var(--text-0);">Side A:</strong> ${escapeHtml(gap.humanSummary.sideA)}</div>
+          <div><strong style="color:var(--text-0);">Side B:</strong> ${escapeHtml(gap.humanSummary.sideB)}</div>
+          <div><strong style="color:#fde68a;">The Untapped Idea:</strong> ${escapeHtml(gap.humanSummary.untappedThesis)}</div>
+          <div><strong style="color:var(--cyan);">Why It's High Signal:</strong> ${escapeHtml(gap.humanSummary.whyHighSignal)}</div>
+        </div>
+      </div>`
+          : ''
+      }
+
       <div class="score-grid">
         ${scoreBox('Void Sparsity', `${(gap.metrics.sparsity * 100).toFixed(0)}%`, gap.metrics.sparsity, '#f59e0b', `d_min = ${gap.metrics.nearestDistance.toFixed(2)}`)}
         ${scoreBox('Bridge Entropy', `${(gap.metrics.bridgeEntropy * 100).toFixed(0)}%`, gap.metrics.bridgeEntropy, '#38bdf8', `${gap.bridgedClusters.length} clusters`)}

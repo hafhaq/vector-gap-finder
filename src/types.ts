@@ -94,6 +94,12 @@ export interface GapCandidate {
   decodedConcepts: DecodedConceptMatch[];
   synthesizedTitle: string;
   synthesizedHypothesis: string;
+  humanSummary?: {
+    sideA: string;
+    sideB: string;
+    untappedThesis: string;
+    whyHighSignal: string;
+  };
   cycleVertices?: number[];
 }
 

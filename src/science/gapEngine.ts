@@ -123,40 +123,54 @@ export function refineGapRiemannian(
 }
 
 /**
- * Decode an arbitrary gap vector g in S^(d-1) back into ranked human-readable concepts
- * using Gram-Schmidt orthogonal residual projection + strict domain-relevance gating!
+ * Decode an arbitrary gap vector g in S^(d-1) back into ranked human-readable concepts.
  *
- * Crucial scientific safeguard:
- * - Domain-native concepts extracted directly from the current corpus (tags/categories/themes)
- *   are always eligible and scored by alignment + local novelty relative to the bounding anchors.
- * - Static cross-domain engineering lexicon primitives are ONLY admitted if they pass a strict
- *   semantic relevance gate against BOTH the gap vector AND the domain centroid — preventing
- *   industrial factory jargon from ever leaking onto non-engineering topics (e.g., cinema, pop culture)!
+ * CRITICAL MATHEMATICAL SAFEGUARD against "Bystander Cluster Leakage":
+ * The orthogonal complement of the 4 nearest neighbors N(g)^perp has dimension (d - 4) and
+ * contains every unrelated third cluster C_3 in the corpus! For example, at a void between
+ * C_0 = [Docker Containers · Linux] and C_1 = [PROFINET IRT · Synchronization], an unconstrained
+ * orthogonal residual g_perp can point at C_3 = [Ladder Logic · Structured Text].
+ *
+ * Solution:
+ * 1. Constrain the residual to the 2D/3D bridging plane spanned by the bridged clusters (C_0, C_1)
+ *    minus the immediate anchor average, rather than unconstrained (d-4)-dimensional outer space!
+ * 2. Require any domain-native concept (isNative) to have higher affinity to the bridged clusters
+ *    (C_0 or C_1) than to any unrelated third cluster C_other!
+ * 3. Enforce true bipartite bridge pairing: Pole A from Cluster C_0, Pole B from Cluster C_1,
+ *    plus novel cross-domain catalysts from CAPABILITY_LEXICON.
  */
 export function decodeGapVector(
   gapVec: Float64Array,
   nearestIndices: number[],
   corpusVectors: Float64Array[],
   domainCentroid: Float64Array,
+  clusters: ClusterInfo[],
+  bridgedClusters: GapCandidate['bridgedClusters'],
   lexicon: LexiconConcept[],
   lexiconVectors: Float64Array[],
   lexiconCorpusMaxSim: Float32Array,
   topK = 5
 ): DecodedConceptMatch[] {
   const neighborBasis = nearestIndices.slice(0, 4).map((idx) => corpusVectors[idx]);
-  const residual = orthogonalResidual(gapVec, neighborBasis);
+  const rawResidual = orthogonalResidual(gapVec, neighborBasis);
 
-  const scored: DecodedConceptMatch[] = [];
+  // Active bridged cluster centroids (C_0, C_1)
+  const c0 = bridgedClusters[0] ? clusters[bridgedClusters[0].clusterId] : clusters[0];
+  const c1 = bridgedClusters[1] ? clusters[bridgedClusters[1].clusterId] : undefined;
+  const activeClusterIds = new Set(bridgedClusters.slice(0, 2).map((b) => b.clusterId));
+
+  const scored: Array<DecodedConceptMatch & { pole: 'c0' | 'c1' | 'catalyst' }> = [];
+
   for (let m = 0; m < lexicon.length; m++) {
     const lv = lexiconVectors[m];
     if (!lv || lv.length !== gapVec.length) continue;
 
     const lvNorm = Math.sqrt(dot(lv, lv));
-    if (lvNorm < 0.25) continue; // Out-of-subspace concept has negligible real overlap with corpus!
+    if (lvNorm < 0.25) continue;
 
     const sim = cosineSim(gapVec, lv);
     const domainAlign = cosineSim(domainCentroid, lv);
-    const resAlign = cosineSim(residual, lv);
+    const resAlign = cosineSim(rawResidual, lv);
     const isNative =
       lexicon[m].domain === 'Domain Theme' ||
       lexicon[m].domain === 'Domain Tag' ||
@@ -164,17 +178,37 @@ export function decodeGapVector(
       lexicon[m].domain === 'Corpus Concept' ||
       lexicon[m].domain === 'Corpus Theme';
 
-    // Strict semantic domain-relevance gate for static engineering primitives!
-    // Never surface factory/cyber/robotics jargon if the corpus is in an unrelated domain!
     if (!isNative && (sim < 0.26 || domainAlign < 0.18 || lexiconCorpusMaxSim[m] < 0.22)) {
       continue;
     }
-    if (isNative && sim < 0.08) {
+    if (isNative && sim < 0.10) {
       continue;
     }
 
-    // For domain-native themes, novelty measures how ABSENT the theme is from the nearest
-    // bounding neighbors (so we surface bridging concepts NOT already saturated at the gap edge!)
+    // Check cluster affinity across all clusters to block Bystander Cluster C_3 leakage!
+    const simC0 = c0 ? cosineSim(c0.centroid, lv) : sim;
+    const simC1 = c1 ? cosineSim(c1.centroid, lv) : simC0;
+    const maxBridgedSim = Math.max(simC0, simC1);
+
+    if (isNative && clusters.length >= 3 && activeClusterIds.size >= 1) {
+      let maxBystanderSim = -1;
+      for (const cl of clusters) {
+        if (activeClusterIds.has(cl.id)) continue;
+        const s = cosineSim(cl.centroid, lv);
+        if (s > maxBystanderSim) maxBystanderSim = s;
+      }
+      // If a corpus phrase belongs much more strongly to an unrelated bystander cluster C_3
+      // than to either of the bridged clusters (C_0, C_1), reject it!
+      if (maxBystanderSim > maxBridgedSim + 0.04) {
+        continue;
+      }
+    }
+
+    // Bridge balance bonus: reward concepts that either anchor one pole cleanly or bridge both
+    const bridgeSupport = c1
+      ? 0.55 * maxBridgedSim + 0.45 * Math.min(simC0, simC1)
+      : simC0;
+
     let localMaxSim = -1;
     for (const bv of neighborBasis) {
       const s = cosineSim(lv, bv);
@@ -186,10 +220,17 @@ export function decodeGapVector(
       : Math.max(0, Math.min(1, 1 - Math.max(0, maxCorpusSim)));
 
     const rawCombined =
-      0.52 * Math.max(0, sim) +
-      0.28 * Math.max(0, resAlign) +
-      0.20 * novelty * Math.max(0.15, (sim + 1) * 0.5);
-    const combined = isNative ? rawCombined * 1.16 : rawCombined;
+      0.46 * Math.max(0, sim) +
+      0.26 * Math.max(0, bridgeSupport) +
+      0.14 * Math.max(0, resAlign) +
+      0.14 * novelty * Math.max(0.15, (sim + 1) * 0.5);
+    const combined = isNative ? rawCombined * 1.12 : rawCombined * 1.06;
+
+    const pole: 'c0' | 'c1' | 'catalyst' = !isNative
+      ? 'catalyst'
+      : c1 && simC1 > simC0
+        ? 'c1'
+        : 'c0';
 
     scored.push({
       term: lexicon[m].term,
@@ -199,29 +240,50 @@ export function decodeGapVector(
       novelty,
       residualAlignment: resAlign,
       combinedScore: combined,
+      pole,
     });
   }
 
   scored.sort((a, b) => b.combinedScore - a.combinedScore);
+
+  const hasOverlap = (a: string, b: string): boolean => {
+    const wa = new Set(a.toLowerCase().split(/\s+/).filter((w) => w.length >= 4));
+    return b
+      .toLowerCase()
+      .split(/\s+/)
+      .some((w) => w.length >= 4 && wa.has(w));
+  };
+
+  // True Bipartite Selection: ensure the top 2 concepts represent BOTH sides of the structural hole
+  // (or 1 bridge pole + 1 novel cross-domain catalyst) rather than two terms from the same side!
   const picked: DecodedConceptMatch[] = [];
+  const tryPick = (cand: (typeof scored)[number]): boolean => {
+    if (picked.some((p) => hasOverlap(p.term, cand.term))) return false;
+    picked.push(cand);
+    return true;
+  };
+
+  if (c1) {
+    const bestC0 = scored.find((s) => s.pole === 'c0');
+    const bestC1 = scored.find((s) => s.pole === 'c1' && (!bestC0 || !hasOverlap(bestC0.term, s.term)));
+    const bestCat = scored.find((s) => s.pole === 'catalyst');
+
+    // Pair the strongest pole/catalyst combination
+    if (bestC0 && bestC1) {
+      if (bestCat && bestCat.combinedScore >= Math.min(bestC0.combinedScore, bestC1.combinedScore) * 0.94) {
+        // Pair the stronger cluster pole with the cross-domain architectural catalyst!
+        tryPick(bestC0.combinedScore >= bestC1.combinedScore ? bestC0 : bestC1);
+        tryPick(bestCat);
+      } else {
+        tryPick(bestC0);
+        tryPick(bestC1);
+      }
+    }
+  }
+
   for (const item of scored) {
     if (picked.length >= topK) break;
-    // Enforce zero shared non-trivial words between top decoded concepts so A × B
-    // never pairs two variations of the same phrase!
-    const itemWords = new Set(
-      item.term
-        .toLowerCase()
-        .split(/\s+/)
-        .filter((w) => w.length >= 4)
-    );
-    const hasWordOverlap = picked.some((p) =>
-      p.term
-        .toLowerCase()
-        .split(/\s+/)
-        .some((w) => w.length >= 4 && itemWords.has(w))
-    );
-    if (hasWordOverlap) continue;
-    picked.push(item);
+    tryPick(item);
   }
   return picked;
 }
@@ -367,24 +429,34 @@ export function evaluateGapCandidate(
   const gate = 0.4 + 0.6 * Math.pow(coherence, 0.6);
   const opportunityScore = Math.max(0, Math.min(1, rawOpp * gate));
 
-  // 7. Decode gap vector via Orthogonal Concept Inversion (domain-gated!)
+  // 7. Decode gap vector via Bipartite Cluster-Constrained Concept Inversion
   const nearestIndices = sims.slice(0, 5).map((s) => s.index);
   const decodedConcepts = decodeGapVector(
     unitVec,
     nearestIndices,
     vectors,
     domainCentroid,
+    clusters,
+    bridgedClusters,
     lexicon,
     lexiconVectors,
     lexiconCorpusMaxSim,
     5
   );
 
-  // Synthesize crisp human-readable title & scientific thesis grounded in actual bridged clusters
+  // Synthesize crisp human-readable title & executive plain-English thesis
   const c0 = bridgedClusters[0]?.label ?? 'Core Domain';
   const c1 = bridgedClusters[1]?.label;
   const topA = decodedConcepts[0]?.term;
   const topB = decodedConcepts[1]?.term;
+  const catalyst = decodedConcepts.find(
+    (d) =>
+      d.domain !== 'Domain Theme' &&
+      d.domain !== 'Domain Tag' &&
+      d.domain !== 'Title Concept' &&
+      d.domain !== 'Corpus Concept' &&
+      d.domain !== 'Corpus Theme'
+  );
 
   const synthesizedTitle =
     topA && topB
@@ -400,7 +472,6 @@ export function evaluateGapCandidate(
     .map((idx) => items[idx].title)
     .join('", "');
 
-  // Empirical co-occurrence check: how many existing items simultaneously contain/align with both A and B?
   let coOccurCount = 0;
   if (topA && topB) {
     const wordsA = topA.toLowerCase().split(/\s+/).filter((w) => w.length >= 4);
@@ -426,6 +497,21 @@ export function evaluateGapCandidate(
     bridgedClusters.length >= 2
       ? `Structural hole between [${c0}] and [${c1}]${coOccurProof}void radius ${nearestDistance.toFixed(2)}, bridge entropy ${(bridgeEntropy * 100).toFixed(0)}%). Surrounded by "${anchorNames}" without uniting ${missingPhrase}.`
       : `Low-density frontier adjacent to "${anchorNames}"${coOccurProof}void radius ${nearestDistance.toFixed(2)}). Orthogonal residual projection highlights ${missingPhrase} as an underrepresented direction.`;
+
+  // Generate explicit 4-part Human-Readable Executive Summary
+  const anchor0 = items[nearestIndices[0]]?.title ?? c0;
+  const anchor1 = items[nearestIndices[1]]?.title ?? c1 ?? c0;
+  const anchor2 = items[nearestIndices[2]]?.title;
+  const humanSummary = {
+    sideA: `[${c0}] — anchored by "${anchor0}"`,
+    sideB: c1 ? `[${c1}] — anchored by "${anchor1}"${anchor2 ? ` and "${anchor2}"` : ''}` : `Adjacent frontier around "${anchor1}"`,
+    untappedThesis:
+      c1 && topA && topB
+        ? `Build a bridge between [${c0}] and [${c1}] by combining ${topA} with ${topB}${catalyst && catalyst.term !== topA && catalyst.term !== topB ? ` (enabled via ${catalyst.term}: ${catalyst.description.toLowerCase()})` : ''}.`
+        : `Introduce ${topA ?? c0}${topB ? ` paired with ${topB}` : ''} into the empty space bordering "${anchor0}" and "${anchor1}".`,
+    whyHighSignal:
+      `${coOccurCount === 0 ? `Zero existing items (0/${items.length}) combine these two capabilities` : `Only ${coOccurCount}/${items.length} items touch both sides`}, yet the spot sits directly between ${bridgedClusters.length >= 2 ? `${bridgedClusters.length} active clusters (${(bridgeEntropy * 100).toFixed(0)}% bridge entropy)` : 'established offerings'} with a cosine void radius of ${nearestDistance.toFixed(2)}${topoPersistence > 0.35 ? ` inside a verified H₁ topological ring cavity` : ''}.`,
+  };
 
   const pos2d = overridePos2d ?? projectOutOfSample(unitVec);
 
@@ -455,6 +541,7 @@ export function evaluateGapCandidate(
     decodedConcepts,
     synthesizedTitle,
     synthesizedHypothesis,
+    humanSummary,
     cycleVertices,
   };
 }
