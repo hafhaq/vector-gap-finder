@@ -143,10 +143,15 @@
           </div>
 
           <div class="stage-actions">
+            <button type="button" id="btn-pan-mode" class="btn btn-sm btn-ghost mobile-pan-btn" aria-pressed="false" title="Lock touch gestures to pan and pinch-zoom the map">
+              ✋ Pan Map
+            </button>
+            <button type="button" id="btn-zoom-in" class="btn btn-sm btn-ghost" aria-label="Zoom in" title="Zoom in">+</button>
+            <button type="button" id="btn-zoom-out" class="btn btn-sm btn-ghost" aria-label="Zoom out" title="Zoom out">−</button>
             <button type="button" id="btn-probe-mode" class="btn btn-sm btn-ghost" aria-pressed="false" title="Click anywhere in empty space (or Shift+Click) to lift &amp; decode that exact vector">
               ⊕ Probe Void
             </button>
-            <button type="button" id="btn-reset-view" class="btn btn-sm btn-ghost">Reset View</button>
+            <button type="button" id="btn-reset-view" class="btn btn-sm btn-ghost">Reset</button>
           </div>
         </div>
 
@@ -154,7 +159,8 @@
           <canvas id="manifold-canvas" aria-label="2D semantic vector manifold showing existing ideas and detected untapped gaps"></canvas>
           <div id="canvas-tooltip" class="canvas-tooltip" aria-hidden="true"></div>
           <div id="stage-metrics" class="stage-metrics"></div>
-          <div class="probe-hint">Drag to pan · Scroll to zoom · <strong>Shift+Click</strong> any empty void to probe &amp; decode its vector</div>
+          <div class="probe-hint probe-hint-desktop">Drag to pan · Scroll to zoom · <strong>Shift+Click</strong> any void to probe &amp; decode</div>
+          <div class="probe-hint probe-hint-mobile">Swipe to scroll page · Tap beacon to inspect · Use <strong>Pan Map</strong> or <strong>+ / −</strong> to explore</div>
         </div>
       </main>
 

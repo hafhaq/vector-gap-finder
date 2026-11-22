@@ -228,16 +228,40 @@ export class VoidLensApp {
     bindLayer('layer-labels', 'labels');
     bindLayer('layer-gaps', 'gaps');
 
-    // Probe mode & Reset View
+    // Mobile Pan Map mode, Zoom buttons, Probe mode & Reset View
+    const panBtn = this.el<HTMLButtonElement>('btn-pan-mode');
     const probeBtn = this.el<HTMLButtonElement>('btn-probe-mode');
+
+    panBtn.addEventListener('click', () => {
+      const next = panBtn.getAttribute('aria-pressed') !== 'true';
+      panBtn.setAttribute('aria-pressed', String(next));
+      this.canvasView.setTouchPanMode(next);
+      if (next && probeBtn.getAttribute('aria-pressed') === 'true') {
+        probeBtn.setAttribute('aria-pressed', 'false');
+        this.canvasView.setProbeMode(false);
+      }
+      this.showToast(
+        next
+          ? 'Map pan & pinch-zoom locked on — tap again to resume page scrolling.'
+          : 'Page scrolling restored.'
+      );
+    });
+
+    this.el('btn-zoom-in').addEventListener('click', () => this.canvasView.zoomBy(1.25));
+    this.el('btn-zoom-out').addEventListener('click', () => this.canvasView.zoomBy(0.8));
+
     probeBtn.addEventListener('click', () => {
       const next = probeBtn.getAttribute('aria-pressed') !== 'true';
       probeBtn.setAttribute('aria-pressed', String(next));
       this.canvasView.setProbeMode(next);
+      if (next && panBtn.getAttribute('aria-pressed') === 'true') {
+        panBtn.setAttribute('aria-pressed', 'false');
+        this.canvasView.setTouchPanMode(false);
+      }
       this.showToast(
         next
-          ? 'Void Probe active — click anywhere on the map to decode that coordinate.'
-          : 'Void Probe off (you can still Shift+Click anytime).'
+          ? 'Void Probe active — tap anywhere on the map to decode that coordinate.'
+          : 'Void Probe off (Shift+Click still works on desktop).'
       );
     });
 

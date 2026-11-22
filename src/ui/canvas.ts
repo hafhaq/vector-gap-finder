@@ -57,6 +57,7 @@ export class ManifoldCanvas {
     gaps: true,
   };
   private probeMode = false;
+  private touchPanMode = false;
 
   // Camera transform (world coords [-1.15, 1.15] -> screen pixels)
   private zoom = 1;
@@ -66,6 +67,9 @@ export class ManifoldCanvas {
   private dragMoved = false;
   private lastPointerX = 0;
   private lastPointerY = 0;
+  private touchTapStart: { x: number; y: number } | null = null;
+  private activeTouchPointers = new Map<number, [number, number]>();
+  private lastPinchDist: number | null = null;
 
   // Cached offscreen density heatmap bitmap for 60fps pan/zoom
   private densityBitmap: HTMLCanvasElement | null = null;
@@ -122,7 +126,22 @@ export class ManifoldCanvas {
 
   public setProbeMode(enabled: boolean): void {
     this.probeMode = enabled;
+    this.syncTouchAction();
     this.canvas.style.cursor = enabled ? 'crosshair' : 'grab';
+  }
+
+  public setTouchPanMode(enabled: boolean): void {
+    this.touchPanMode = enabled;
+    this.syncTouchAction();
+  }
+
+  private syncTouchAction(): void {
+    this.canvas.classList.toggle('touch-interactive', this.touchPanMode || this.probeMode);
+  }
+
+  public zoomBy(factor: number): void {
+    this.zoom = Math.max(0.55, Math.min(5.5, this.zoom * factor));
+    this.render();
   }
 
   public resetView(): void {
@@ -258,13 +277,33 @@ export class ManifoldCanvas {
     };
 
     this.canvas.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
       const [sx, sy] = getCanvasCoords(e);
+
       if (this.probeMode || e.shiftKey) {
         const [wx, wy] = this.screenToWorld(sx, sy);
         this.callbacks.onProbeVoid(wx, wy);
         return;
       }
+
+      // On touchscreens, leave 1-finger swipe free for native vertical page scrolling
+      // unless the user explicitly toggled "Pan Map" mode. Still allow single-tap selection!
+      if (e.pointerType === 'touch' && !this.touchPanMode) {
+        this.touchTapStart = { x: e.clientX, y: e.clientY };
+        return;
+      }
+
+      if (e.pointerType === 'touch') {
+        this.activeTouchPointers.set(e.pointerId, [sx, sy]);
+        if (this.activeTouchPointers.size === 2) {
+          const pts = [...this.activeTouchPointers.values()];
+          this.lastPinchDist = Math.hypot(pts[0][0] - pts[1][0], pts[0][1] - pts[1][1]);
+          this.isDragging = false;
+          this.canvas.setPointerCapture(e.pointerId);
+          return;
+        }
+      }
+
       this.isDragging = true;
       this.dragMoved = false;
       this.lastPointerX = sx;
@@ -275,6 +314,30 @@ export class ManifoldCanvas {
 
     this.canvas.addEventListener('pointermove', (e) => {
       const [sx, sy] = getCanvasCoords(e);
+
+      // Two-finger pinch zoom when Pan Map is active on touchscreens
+      if (e.pointerType === 'touch' && this.activeTouchPointers.has(e.pointerId)) {
+        this.activeTouchPointers.set(e.pointerId, [sx, sy]);
+        if (this.activeTouchPointers.size === 2) {
+          const pts = [...this.activeTouchPointers.values()];
+          const dist = Math.hypot(pts[0][0] - pts[1][0], pts[0][1] - pts[1][1]);
+          if (this.lastPinchDist && this.lastPinchDist > 8) {
+            const factor = dist / this.lastPinchDist;
+            const midX = (pts[0][0] + pts[1][0]) * 0.5;
+            const midY = (pts[0][1] + pts[1][1]) * 0.5;
+            const [wxBefore, wyBefore] = this.screenToWorld(midX, midY);
+            this.zoom = Math.max(0.55, Math.min(5.5, this.zoom * factor));
+            const [sxAfter, syAfter] = this.worldToScreen(wxBefore, wyBefore);
+            this.panX += midX - sxAfter;
+            this.panY += midY - syAfter;
+            this.render();
+          }
+          this.lastPinchDist = dist;
+          this.dragMoved = true;
+          return;
+        }
+      }
+
       if (this.isDragging) {
         const dx = sx - this.lastPointerX;
         const dy = sy - this.lastPointerY;
@@ -287,6 +350,8 @@ export class ManifoldCanvas {
         this.render();
         return;
       }
+
+      if (e.pointerType === 'touch') return;
 
       const hit = this.hitTest(sx, sy);
       const changed =
@@ -303,23 +368,59 @@ export class ManifoldCanvas {
       if (changed) this.render();
     });
 
-    this.canvas.addEventListener('pointerup', (e) => {
-      if (!this.isDragging) return;
-      this.isDragging = false;
-      this.canvas.releasePointerCapture(e.pointerId);
-      this.canvas.style.cursor = this.probeMode ? 'crosshair' : 'grab';
+    const handleSelectAt = (sx: number, sy: number) => {
+      if (!this.result) return;
+      const hit = this.hitTest(sx, sy);
+      if (hit?.kind === 'gap') {
+        this.callbacks.onSelectGap(this.result.gaps[hit.idx]);
+      } else if (hit?.kind === 'custom' && this.customGap) {
+        this.callbacks.onSelectGap(this.customGap);
+      } else if (hit?.kind === 'item') {
+        this.callbacks.onSelectItem(hit.idx);
+      }
+    };
 
-      if (!this.dragMoved && this.result) {
-        const [sx, sy] = getCanvasCoords(e);
-        const hit = this.hitTest(sx, sy);
-        if (hit?.kind === 'gap') {
-          this.callbacks.onSelectGap(this.result.gaps[hit.idx]);
-        } else if (hit?.kind === 'custom' && this.customGap) {
-          this.callbacks.onSelectGap(this.customGap);
-        } else if (hit?.kind === 'item') {
-          this.callbacks.onSelectItem(hit.idx);
+    this.canvas.addEventListener('pointerup', (e) => {
+      if (e.pointerType === 'touch' && !this.touchPanMode) {
+        if (this.touchTapStart) {
+          const moved = Math.hypot(
+            e.clientX - this.touchTapStart.x,
+            e.clientY - this.touchTapStart.y
+          );
+          this.touchTapStart = null;
+          if (moved < 10) {
+            const [sx, sy] = getCanvasCoords(e);
+            handleSelectAt(sx, sy);
+          }
+        }
+        return;
+      }
+
+      if (e.pointerType === 'touch') {
+        this.activeTouchPointers.delete(e.pointerId);
+        if (this.activeTouchPointers.size < 2) {
+          this.lastPinchDist = null;
         }
       }
+
+      if (!this.isDragging) return;
+      this.isDragging = false;
+      if (this.canvas.hasPointerCapture(e.pointerId)) {
+        this.canvas.releasePointerCapture(e.pointerId);
+      }
+      this.canvas.style.cursor = this.probeMode ? 'crosshair' : 'grab';
+
+      if (!this.dragMoved) {
+        const [sx, sy] = getCanvasCoords(e);
+        handleSelectAt(sx, sy);
+      }
+    });
+
+    this.canvas.addEventListener('pointercancel', (e) => {
+      this.touchTapStart = null;
+      this.activeTouchPointers.delete(e.pointerId);
+      if (this.activeTouchPointers.size < 2) this.lastPinchDist = null;
+      this.isDragging = false;
     });
 
     this.canvas.addEventListener('pointerleave', () => {
