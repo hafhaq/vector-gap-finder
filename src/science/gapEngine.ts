@@ -160,6 +160,7 @@ export function decodeGapVector(
     const isNative =
       lexicon[m].domain === 'Domain Theme' ||
       lexicon[m].domain === 'Domain Tag' ||
+      lexicon[m].domain === 'Title Concept' ||
       lexicon[m].domain === 'Corpus Concept' ||
       lexicon[m].domain === 'Corpus Theme';
 
@@ -184,10 +185,11 @@ export function decodeGapVector(
       ? Math.max(0, Math.min(1, 1 - Math.max(0, localMaxSim)))
       : Math.max(0, Math.min(1, 1 - Math.max(0, maxCorpusSim)));
 
-    const combined =
+    const rawCombined =
       0.52 * Math.max(0, sim) +
       0.28 * Math.max(0, resAlign) +
       0.20 * novelty * Math.max(0.15, (sim + 1) * 0.5);
+    const combined = isNative ? rawCombined * 1.16 : rawCombined;
 
     scored.push({
       term: lexicon[m].term,
@@ -202,13 +204,24 @@ export function decodeGapVector(
 
   scored.sort((a, b) => b.combinedScore - a.combinedScore);
   const picked: DecodedConceptMatch[] = [];
-  const domainCounts = new Map<string, number>();
   for (const item of scored) {
     if (picked.length >= topK) break;
-    const dc = domainCounts.get(item.domain) ?? 0;
-    if (dc >= 3 && picked.length < topK - 1) continue;
+    // Enforce zero shared non-trivial words between top decoded concepts so A × B
+    // never pairs two variations of the same phrase!
+    const itemWords = new Set(
+      item.term
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length >= 4)
+    );
+    const hasWordOverlap = picked.some((p) =>
+      p.term
+        .toLowerCase()
+        .split(/\s+/)
+        .some((w) => w.length >= 4 && itemWords.has(w))
+    );
+    if (hasWordOverlap) continue;
     picked.push(item);
-    domainCounts.set(item.domain, dc + 1);
   }
   return picked;
 }
@@ -374,7 +387,7 @@ export function evaluateGapCandidate(
   const topB = decodedConcepts[1]?.term;
 
   const synthesizedTitle =
-    topA && topB && bridgedClusters.length >= 2
+    topA && topB
       ? `${topA} × ${topB}`
       : c1
         ? `${c0} × ${c1}`
@@ -387,16 +400,32 @@ export function evaluateGapCandidate(
     .map((idx) => items[idx].title)
     .join('", "');
 
+  // Empirical co-occurrence check: how many existing items simultaneously contain/align with both A and B?
+  let coOccurCount = 0;
+  if (topA && topB) {
+    const wordsA = topA.toLowerCase().split(/\s+/).filter((w) => w.length >= 4);
+    const wordsB = topB.toLowerCase().split(/\s+/).filter((w) => w.length >= 4);
+    for (const it of items) {
+      const hay = `${it.title} ${it.summary} ${(it.tags ?? []).join(' ')}`.toLowerCase();
+      const hasA = wordsA.length > 0 && wordsA.every((w) => hay.includes(w));
+      const hasB = wordsB.length > 0 && wordsB.every((w) => hay.includes(w));
+      if (hasA && hasB) coOccurCount++;
+    }
+  }
+
   const missingPhrase = topA
     ? `${topA.toLowerCase()}${topB ? ` with ${topB.toLowerCase()}` : ''}`
     : c1
       ? `${c0.toLowerCase()} with ${c1.toLowerCase()}`
       : 'an unrepresented semantic bridge';
 
+  const coOccurProof =
+    topA && topB ? ` (${coOccurCount} of ${items.length} corpus items combine both; ` : ' (';
+
   const synthesizedHypothesis =
     bridgedClusters.length >= 2
-      ? `Structural hole detected between [${c0}] and [${c1}] (cosine void radius ${nearestDistance.toFixed(2)}, bridge entropy ${(bridgeEntropy * 100).toFixed(0)}%). Existing items ("${anchorNames}") surround this manifold region without uniting ${missingPhrase}.`
-      : `Low-density frontier adjacent to "${anchorNames}" (void radius ${nearestDistance.toFixed(2)}). Orthogonal residual projection highlights ${missingPhrase} as an underrepresented direction in this corpus.`;
+      ? `Structural hole between [${c0}] and [${c1}]${coOccurProof}void radius ${nearestDistance.toFixed(2)}, bridge entropy ${(bridgeEntropy * 100).toFixed(0)}%). Surrounded by "${anchorNames}" without uniting ${missingPhrase}.`
+      : `Low-density frontier adjacent to "${anchorNames}"${coOccurProof}void radius ${nearestDistance.toFixed(2)}). Orthogonal residual projection highlights ${missingPhrase} as an underrepresented direction.`;
 
   const pos2d = overridePos2d ?? projectOutOfSample(unitVec);
 
@@ -646,6 +675,15 @@ export function runVectorGapAnalysis(params: RunAnalysisParams): FullEngineOutpu
   // Non-Maximum Suppression (NMS) on S^(d-1) + 2D distance so every surfaced gap is distinct!
   const gaps: GapCandidate[] = [];
   const usedTitles = new Set<string>();
+  const conceptUsage = new Map<string, number>();
+  const canonicalKey = (t: string) =>
+    t
+      .toLowerCase()
+      .split(/\s*[×↔]\s*/)
+      .map((s) => s.trim())
+      .sort()
+      .join(' × ');
+
   for (const cand of evaluated) {
     if (gaps.length >= config.topKGaps) break;
     // Ensure candidate isn't practically sitting on top of an existing offering
@@ -657,25 +695,55 @@ export function runVectorGapAnalysis(params: RunAnalysisParams): FullEngineOutpu
     });
     if (tooClose) continue;
 
-    // Ensure every ranked gap card has a distinct, non-duplicate title
+    // Pick the highest-scoring pair (termA, termB) from cand.decodedConcepts where neither
+    // term has already dominated >= 2 higher-ranked gap titles and the pair is unique!
+    let bestPair: [string, string] | null = null;
+    const dcs = cand.decodedConcepts;
+    for (let i = 0; i < dcs.length; i++) {
+      for (let j = i + 1; j < dcs.length; j++) {
+        const a = dcs[i].term;
+        const b = dcs[j].term;
+        const key = canonicalKey(`${a} × ${b}`);
+        if (usedTitles.has(key)) continue;
+        const uA = conceptUsage.get(a.toLowerCase()) ?? 0;
+        const uB = conceptUsage.get(b.toLowerCase()) ?? 0;
+        if (uA < 1 && uB < 1) {
+          bestPair = [a, b];
+          break;
+        }
+        if (!bestPair && uA < 2 && uB < 2) {
+          bestPair = [a, b];
+        }
+      }
+      if (bestPair && (conceptUsage.get(bestPair[0].toLowerCase()) ?? 0) === 0 && (conceptUsage.get(bestPair[1].toLowerCase()) ?? 0) === 0) {
+        break;
+      }
+    }
+
     let title = cand.synthesizedTitle;
-    if (usedTitles.has(title.toLowerCase())) {
-      const altA = cand.decodedConcepts[0]?.term;
-      const altC = cand.decodedConcepts[2]?.term;
+    let hypothesis = cand.synthesizedHypothesis;
+    if (bestPair) {
+      title = `${bestPair[0]} × ${bestPair[1]}`;
+      hypothesis = hypothesis.replace(
+        /without uniting .+$/,
+        `without uniting ${bestPair[0].toLowerCase()} with ${bestPair[1].toLowerCase()}.`
+      );
+      conceptUsage.set(bestPair[0].toLowerCase(), (conceptUsage.get(bestPair[0].toLowerCase()) ?? 0) + 1);
+      conceptUsage.set(bestPair[1].toLowerCase(), (conceptUsage.get(bestPair[1].toLowerCase()) ?? 0) + 1);
+    } else if (usedTitles.has(canonicalKey(title))) {
       const bc0 = cand.bridgedClusters[0]?.label;
       const bc1 = cand.bridgedClusters[1]?.label;
-      if (altA && altC && !usedTitles.has(`${altA} × ${altC}`.toLowerCase())) {
-        title = `${altA} × ${altC}`;
-      } else if (bc0 && bc1 && !usedTitles.has(`${bc0} ↔ ${bc1}`.toLowerCase())) {
+      if (bc0 && bc1 && !usedTitles.has(canonicalKey(`${bc0} ↔ ${bc1}`))) {
         title = `${bc0} ↔ ${bc1}`;
       }
     }
-    usedTitles.add(title.toLowerCase());
+    usedTitles.add(canonicalKey(title));
 
     gaps.push({
       ...cand,
       id: `gap-${gaps.length + 1}`,
       synthesizedTitle: title,
+      synthesizedHypothesis: hypothesis,
     });
   }
 

@@ -129,8 +129,9 @@ export function sphericalKMeans(
     }
   }
 
-  // Build ClusterInfo objects
+  // Build ClusterInfo objects with distinct non-repeating primary labels across clusters
   const clusters: ClusterInfo[] = [];
+  const usedPrimaryKeywords = new Set<string>();
   for (let c = 0; c < k; c++) {
     const members: number[] = [];
     let cohSum = 0;
@@ -140,11 +141,14 @@ export function sphericalKMeans(
         cohSum += cosineSim(vectors[i], bestCentroids[c]);
       }
     }
-    const keywords = extractKeywords(members, 3);
+    const rawKeywords = extractKeywords(members, 5);
+    const distinctKw = rawKeywords.filter((kw) => !usedPrimaryKeywords.has(kw.toLowerCase()));
+    const chosen = (distinctKw.length >= 2 ? distinctKw : rawKeywords).slice(0, 2);
+    for (const kw of chosen) usedPrimaryKeywords.add(kw.toLowerCase());
+
     const label =
-      keywords.length > 0
-        ? keywords
-            .slice(0, 2)
+      chosen.length > 0
+        ? chosen
             .map((kw) => kw.replace(/\b\w/g, (ch) => ch.toUpperCase()))
             .join(' · ')
         : `Cluster ${c + 1}`;
@@ -154,7 +158,7 @@ export function sphericalKMeans(
       color: CLUSTER_PALETTE[c % CLUSTER_PALETTE.length],
       centroid: bestCentroids[c],
       memberIndices: members,
-      keywords,
+      keywords: rawKeywords.slice(0, 3),
       cohesion: members.length > 0 ? cohSum / members.length : 0,
       burtConstraint: 0,
     });

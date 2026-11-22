@@ -1,16 +1,17 @@
 /**
- * Scientific Local Semantic Embedding Engine:
- * Sublinear TF-IDF + Bigrams + Character 4-Gram Morphological Hashing
- * followed by Exact Dual-Gram Truncated SVD (Latent Semantic Analysis).
- *
- * Also tracks canonical human-readable surface forms (never exposing ugly stemmed stems!)
- * and extracts a clean, domain-native concept lexicon directly from ANY corpus so
- * gap decoding works accurately on ANY topic (engineering, cinema, medicine, finance, etc.).
+ * Scientific Local Semantic Embedding Engine & Clause-Aware NLP Phrase Extractor:
+ * 1. Unicode NFD diacritic normalization (never splits accented words like "réalité" -> "alit")
+ * 2. Clause-respecting contiguous content-word phrase extraction (never glues words across
+ *    commas, periods, or removed stopwords!)
+ * 3. Comprehensive generic academic/filler filter ("possible", "technology", "reviewed", etc.
+ *    can never become cluster names or decoded gap concepts)
+ * 4. Multi-word (2-3 word) domain noun-phrase lexicon extraction with PMI / IDF scoring.
  */
 
 import { jacobiSymmetricEigen, normalizeInPlace } from './math.ts';
 import type { CorpusItem, LexiconConcept } from '../types.ts';
 
+/** Function words & structural stopwords that break contiguous noun phrases */
 const STOP_WORDS = new Set([
   'the', 'and', 'for', 'with', 'that', 'this', 'from', 'into', 'over', 'under',
   'your', 'their', 'about', 'which', 'while', 'where', 'when', 'what', 'there',
@@ -27,20 +28,73 @@ const STOP_WORDS = new Set([
   'first', 'second', 'third', 'last', 'next', 'early', 'late', 'same', 'own', 'even',
   'still', 'however', 'although', 'because', 'including', 'included', 'called', 'named',
   'part', 'time', 'year', 'years', 'day', 'days', 'month', 'world', 'people', 'work',
-  'enable', 'enables', 'enabling', 'provide', 'provides', 'providing', 'support',
-  'supports', 'supporting', 'system', 'systems', 'solution', 'solutions', 'platform',
   'united', 'states', 'american', 'english', 'british', 'january', 'february', 'march',
   'april', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
-  'discussion', 'points', 'comments', 'recent', 'covering', 'wikipedia', 'article',
-  'stars', 'starring', 'directed', 'released', 'written', 'produced', 'featuring',
-  'based', 'study', 'analysis', 'case', 'role', 'what', 'learn', 'part', 'source',
-  'repository', 'open', 'page', 'list', 'films', 'movie', 'movies', 'series',
-  'received', 'founded', 'publication', 'research', 'object', 'context', 'played',
-  'premiered', 'nominated', 'appeared', 'appears', 'following', 'several', 'various',
-  'reviews', 'around', 'general', 'different', 'related', 'between', 'through', 'film',
+  'upon', 'onto', 'among', 'towards', 'toward', 'against', 'around', 'whether', 'either',
 ]);
 
-/** Lightweight Porter-inspired technical suffix normalizer (internal matching ONLY!) */
+/**
+ * Generic academic, metadata, and filler words that must NEVER surface as cluster labels
+ * or decoded gap concepts (eliminates "Possible × Technology", "Reviewed Spatial", etc.).
+ */
+const GENERIC_SLOP_WORDS = new Set([
+  'possible', 'impossible', 'possibility', 'technology', 'technologies', 'technological',
+  'available', 'availability', 'different', 'difference', 'differences', 'various', 'variety',
+  'important', 'importance', 'significant', 'significantly', 'effective', 'effectively',
+  'potential', 'potentially', 'proposed', 'propose', 'proposes', 'present', 'presents',
+  'presented', 'presenting', 'approach', 'approaches', 'method', 'methods', 'methodology',
+  'application', 'applications', 'applied', 'useful', 'novel', 'newly',
+  'paper', 'papers', 'article', 'articles', 'review', 'reviewed', 'reviews', 'peer',
+  'journal', 'conference', 'proceedings', 'international', 'national', 'research', 'researcher',
+  'researchers', 'study', 'studies', 'studied', 'results', 'result', 'resulting', 'effect',
+  'effects', 'analysis', 'analyses', 'evaluation', 'evaluated', 'overview', 'survey',
+  'multiple', 'single', 'general', 'specific', 'specifically', 'common', 'commonly',
+  'typical', 'basic', 'provide', 'provided', 'provides', 'providing', 'include', 'includes',
+  'allow', 'allows', 'allowing', 'enable', 'enables', 'enabling', 'support', 'supports',
+  'supporting', 'show', 'shows', 'shown', 'demonstrate', 'demonstrates', 'demonstrated',
+  'investigate', 'investigates', 'investigated', 'explore', 'explores', 'explored', 'discuss',
+  'discussed', 'address', 'addressed', 'aspect', 'aspects', 'factor', 'factors', 'type', 'types',
+  'form', 'forms', 'kind', 'kinds', 'way', 'ways', 'manner', 'order', 'point', 'points',
+  'number', 'total', 'group', 'groups', 'set', 'sets', 'example', 'examples', 'case', 'cases',
+  'need', 'needs', 'required', 'requirement', 'requirements', 'related', 'relation',
+  'relationship', 'associated', 'compared', 'comparison', 'similar', 'particular',
+  'particularly', 'especially', 'main', 'major', 'key', 'primary', 'overall', 'complete',
+  'full', 'discussion', 'points', 'comments', 'recent', 'covering', 'wikipedia', 'stars',
+  'starring', 'directed', 'released', 'written', 'produced', 'featuring', 'learn', 'source',
+  'repository', 'page', 'list', 'films', 'movie', 'movies', 'series', 'received', 'founded',
+  'publication', 'object', 'played', 'premiered', 'nominated', 'appeared', 'appears',
+  'following', 'several', 'film', 'book', 'books', 'author', 'authors', 'chapter', 'volume',
+  'press', 'university', 'edition', 'post', 'posts', 'thread', 'question', 'answer',
+  'file', 'files', 'folder', 'github', 'readme', 'license', 'install',
+  'div', 'class', 'section', 'abstract', 'span', 'jats', 'xml', 'html', 'http', 'https', 'www',
+  'numerous', 'advantage', 'advantages', 'disadvantage', 'disadvantages', 'benefit', 'benefits',
+  'limitation', 'limitations', 'century', 'invention', 'inventions', 'actress', 'actor',
+  'actors', 'campaign', 'campaigns', 'advert', 'advertisement', 'company', 'companies', 'agency',
+  'state', 'good', 'great', 'now', 'right', 'left', 'high', 'low', 'large', 'small',
+  'upcoming', 'highly', 'fully', 'widely', 'mostly', 'nearly', 'almost', 'real', 'environment',
+]);
+
+/** Adjectives that can modify a noun at the start of a phrase, but must NEVER be the trailing head word of a noun phrase! */
+const TRAILING_ADJECTIVES = new Set([
+  'high', 'low', 'higher', 'lower', 'theoretical', 'experimental', 'practical', 'commercial',
+  'industrial', 'conventional', 'traditional', 'modern', 'advanced', 'dynamic', 'static',
+  'virtual', 'augmented', 'spatial', 'digital', 'physical', 'chemical', 'mechanical',
+  'electrical', 'electronic', 'optical', 'thermal', 'magnetic', 'structural', 'functional',
+  'operational', 'real', 'fast', 'slow', 'large', 'small', 'short', 'long', 'good', 'great',
+  'new', 'old', 'full', 'empty', 'open', 'closed', 'free', 'public', 'private', 'social',
+  'cultural', 'political', 'economic', 'global', 'local', 'internal', 'external', 'primary',
+  'secondary', 'initial', 'final', 'active', 'passive', 'direct', 'indirect', 'hybrid',
+  'solid', 'liquid', 'autonomous', 'automated', 'interactive', 'immersive', 'collaborative',
+  'distributed', 'decentralized', 'federated', 'hierarchical', 'modular', 'scalable', 'robust',
+  'flexible', 'efficient', 'accurate', 'precise', 'deterministic', 'stochastic', 'adaptive',
+  'predictive', 'generative', 'cognitive', 'neural', 'symbolic', 'semantic', 'topological',
+  'conductive', 'resistive', 'capacitive', 'inductive', 'upcoming', 'semiotic', 'peircean',
+]);
+
+function normalizeAscii(text: string): string {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 function lightStem(word: string): string {
   if (word.length <= 4) return word;
   if (word.endsWith('ization') && word.length > 9) return word.slice(0, -7) + 'iz';
@@ -60,28 +114,89 @@ function lightStem(word: string): string {
   return word;
 }
 
-export function tokenizeTechnical(text: string): string[] {
-  const cleaned = text
+/**
+ * Splits text into contiguous runs of content words strictly respecting punctuation
+ * and stopword boundaries — never gluing words across sentence breaks or stripped stopwords!
+ */
+export function extractContiguousRuns(text: string): string[][] {
+  const ascii = normalizeAscii(text)
     .toLowerCase()
-    .replace(/[/\\\-_]+/g, ' ')
-    .replace(/[^a-z0-9\s]/g, ' ');
-  return cleaned
-    .split(/\s+/)
-    .filter((w) => w.length >= 3 && !STOP_WORDS.has(w) && !/^\d+$/.test(w));
+    // Keep common technical hyphenated prefixes attached to their head word
+    .replace(/\b(solid|multi|single|non|self|zero|cross|real|open|closed|high|low|all|semi|three|two|co)-(?=[a-z])/g, '$1 ');
+  // Split on any clause/phrase punctuation first
+  const clauses = ascii.split(/[.,;:!?()[\]{}"'`/\\|<>—–+\-*=~_]+/);
+  const runs: string[][] = [];
+
+  for (const clause of clauses) {
+    const rawWords = clause.trim().split(/\s+/);
+    let currentRun: string[] = [];
+    for (const w of rawWords) {
+      const clean = w.replace(/[^a-z0-9]/g, '');
+      if (
+        clean.length < 3 ||
+        /^\d+$/.test(clean) ||
+        STOP_WORDS.has(clean)
+      ) {
+        if (currentRun.length > 0) {
+          runs.push(currentRun);
+          currentRun = [];
+        }
+      } else {
+        currentRun.push(clean);
+      }
+    }
+    if (currentRun.length > 0) runs.push(currentRun);
+  }
+  return runs;
+}
+
+/** Trim generic wrapper words ("films", "systems", "techniques", "methods", etc.) from the edges of a candidate run */
+function trimGenericEdges(words: string[]): string[] {
+  let start = 0;
+  let end = words.length;
+  while (start < end && GENERIC_SLOP_WORDS.has(words[start])) start++;
+  while (end > start && (GENERIC_SLOP_WORDS.has(words[end - 1]) || TRAILING_ADJECTIVES.has(words[end - 1]))) {
+    end--;
+  }
+  return words.slice(start, end);
+}
+
+export function tokenizeTechnical(text: string): string[] {
+  const runs = extractContiguousRuns(text);
+  const out: string[] = [];
+  for (const run of runs) {
+    for (const w of run) out.push(w);
+  }
+  return out;
 }
 
 function titleCase(phrase: string): string {
   return phrase
     .split(/\s+/)
-    .map((w) => (w.length <= 2 ? w : w[0].toUpperCase() + w.slice(1)))
+    .map((w) => (w.length <= 2 ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1)))
     .join(' ');
+}
+
+/** Returns true if a phrase is informative (not composed solely of generic slop words) */
+function isHighSignalPhrase(words: string[]): boolean {
+  if (words.length === 0) return false;
+  const lastWord = words[words.length - 1];
+  // A valid noun phrase must never end on a bare dangling adjective (blocks "High Theoretical", "Spatial Augmented")
+  if (TRAILING_ADJECTIVES.has(lastWord) || GENERIC_SLOP_WORDS.has(lastWord)) return false;
+
+  const specificCount = words.filter((w) => !GENERIC_SLOP_WORDS.has(w)).length;
+  if (words.length === 1) {
+    return specificCount === 1 && words[0].length >= 5;
+  }
+  if (GENERIC_SLOP_WORDS.has(words[0])) return false;
+  return specificCount >= Math.ceil(words.length * 0.65);
 }
 
 export function extractFeatures(
   text: string,
   surfaceCounts?: Map<string, Map<string, number>>
 ): Map<string, number> {
-  const tokens = tokenizeTechnical(text);
+  const runs = extractContiguousRuns(text);
   const counts = new Map<string, number>();
 
   const add = (feat: string, weight: number, surface?: string) => {
@@ -96,17 +211,30 @@ export function extractFeatures(
     }
   };
 
-  const stemmed = tokens.map(lightStem);
-  for (let i = 0; i < stemmed.length; i++) {
-    const t = stemmed[i];
-    add(`w:${t}`, 1.0, tokens[i]);
-    if (i + 1 < stemmed.length && tokens[i] !== tokens[i + 1]) {
-      add(`bg:${t}_${stemmed[i + 1]}`, 0.85, `${tokens[i]} ${tokens[i + 1]}`);
-    }
-    if (tokens[i].length >= 5) {
-      const padded = `<${tokens[i]}>`;
-      for (let c = 0; c <= padded.length - 4; c++) {
-        add(`c4:${padded.slice(c, c + 4)}`, 0.22);
+  for (const run of runs) {
+    const stemmed = run.map(lightStem);
+    for (let i = 0; i < stemmed.length; i++) {
+      const t = stemmed[i];
+      const w = run[i];
+      // Keep full TF-IDF geometric representation, but only register high-signal words as displayable surfaces
+      add(`w:${t}`, 1.0, isHighSignalPhrase([w]) ? w : undefined);
+
+      // Only form bigrams from genuinely adjacent words inside the SAME contiguous run!
+      if (i + 1 < stemmed.length && w !== run[i + 1]) {
+        const pair = [w, run[i + 1]];
+        const highSig = isHighSignalPhrase(pair);
+        add(
+          `bg:${t}_${stemmed[i + 1]}`,
+          0.85,
+          highSig ? `${w} ${run[i + 1]}` : undefined
+        );
+      }
+
+      if (w.length >= 5) {
+        const padded = `<${w}>`;
+        for (let c = 0; c <= padded.length - 4; c++) {
+          add(`c4:${padded.slice(c, c + 4)}`, 0.22);
+        }
       }
     }
   }
@@ -114,43 +242,46 @@ export function extractFeatures(
 }
 
 /**
- * Automatically builds a clean, 100% domain-native concept vocabulary directly from
- * any corpus (tags, categories, salient unstemmed bigrams & terms).
- * Ensures VoidLens speaks the exact language of ANY topic (cinema, bio, PLCs, etc.)!
+ * Extracts a high-signal, 100% domain-native multi-word concept vocabulary directly
+ * from the active corpus (curated multi-word tags + contiguous 2-3 word noun phrases).
+ * Never emits vague 1-word filler or cross-punctuation gibberish!
  */
 export function buildDomainNativeLexicon(items: CorpusItem[], maxConcepts = 65): LexiconConcept[] {
   const n = items.length;
   if (n === 0) return [];
 
-  // Identify ubiquitous query-echo unigrams (appearing in > 42% of corpus docs)
-  // so phrases like "Stars Sydney" never get surfaced as "missing" concepts!
+  // Identify ubiquitous query-echo tokens (appearing in > 48% of corpus docs)
   const tokenDocFreq = new Map<string, number>();
   for (const item of items) {
     const uniq = new Set(tokenizeTechnical(`${item.title} ${item.summary}`));
     for (const tok of uniq) tokenDocFreq.set(tok, (tokenDocFreq.get(tok) ?? 0) + 1);
   }
   const ubiquitousTokens = new Set<string>();
+  const hyperUbiquitousTokens = new Set<string>();
   const echoThreshold = Math.max(4, Math.floor(n * 0.42));
+  const hyperThreshold = Math.max(5, Math.floor(n * 0.56));
   for (const [tok, df] of tokenDocFreq.entries()) {
     if (df >= echoThreshold) ubiquitousTokens.add(tok);
+    if (df >= hyperThreshold) hyperUbiquitousTokens.add(tok);
   }
 
   const phraseDocs = new Map<string, Set<number>>();
   const phraseContext = new Map<string, string[]>();
   const phraseOrigin = new Map<string, string>();
 
-  const recordPhrase = (raw: string, docIdx: number, origin: string, titleSample: string) => {
-    const clean = raw
-      .replace(/\(.*?\)/g, ' ')
-      .replace(/[^a-zA-Z0-9\s\-&]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (clean.length < 4 || clean.length > 48) return;
-    const words = clean.toLowerCase().split(/\s+/);
-    if (words.every((w) => STOP_WORDS.has(w) || /^\d+$/.test(w))) return;
-    // Reject phrases containing ubiquitous query-echo tokens (e.g. "sydney", "sweeney")
-    if (words.some((w) => ubiquitousTokens.has(w))) return;
-    const key = clean.toLowerCase();
+  const recordPhrase = (words: string[], docIdx: number, origin: string, titleSample: string) => {
+    if (words.length < 2 || words.length > 3) return; // Strictly require 2-3 word specific phrases!
+    if (!isHighSignalPhrase(words)) return;
+    // Block phrases containing hyper-ubiquitous subject tokens (>58% of corpus, e.g. "sydney", "sweeney")
+    // or where >= 2 words are ubiquitous query echoes (e.g. "projection mapping", "augmented reality")
+    if (words.some((w) => hyperUbiquitousTokens.has(w))) return;
+    if (words.filter((w) => ubiquitousTokens.has(w)).length >= 2) return;
+    // Reject duplicate consecutive words
+    if (words[0] === words[1] || (words[2] && words[1] === words[2])) return;
+
+    const key = words.join(' ');
+    if (key.length < 7 || key.length > 46) return;
+
     let set = phraseDocs.get(key);
     if (!set) {
       set = new Set<number>();
@@ -163,60 +294,76 @@ export function buildDomainNativeLexicon(items: CorpusItem[], maxConcepts = 65):
     if (ctx.length < 3 && !ctx.includes(titleSample)) ctx.push(titleSample);
   };
 
-  // 1. Harvest explicit categories & Wikipedia/OpenAlex/GitHub tags first (highest quality!)
   items.forEach((item, idx) => {
-    if (
-      item.category &&
-      !/^(wikipedia|industry discussion|research paper|open source|custom corpus|encyclopedia concept|knowledge entity|peer-reviewed|community thread|news report|archive|book|dataset|clinical trial|regulatory filing|npm package|ml model|q&a|media)$/i.test(
-        item.category
-      )
-    ) {
-      recordPhrase(item.category, idx, 'Domain Theme', item.title);
-    }
+    // 1. Curated multi-word tags from OpenAlex, Wikipedia, Crossref, GitHub, StackExchange
     for (const tag of item.tags ?? []) {
-      // Skip chronological/administrative categories (e.g. "1977 establishments in Pennsylvania")
-      if (/(\b\d{4}s?\b|establishments|disestablishments|initial public offerings|living people|births|deaths|alumni|people from|companies based in)/i.test(tag)) {
+      if (
+        /(\b\d{4}s?\b|establishments|disestablishments|initial public offerings|living people|births|deaths|alumni|people from|companies based in|articles|wikipedia|wikidata)/i.test(
+          tag
+        )
+      ) {
         continue;
       }
-      recordPhrase(tag, idx, 'Domain Tag', item.title);
+      const runs = extractContiguousRuns(tag);
+      for (const rawRun of runs) {
+        const run = trimGenericEdges(rawRun);
+        if (run.length >= 2 && run.length <= 3) {
+          recordPhrase(run, idx, 'Domain Tag', item.title);
+        }
+      }
     }
 
-    // 2. Extract clean unstemmed bigrams and salient terms from title + summary
-    const tokens = tokenizeTechnical(`${item.title}. ${item.summary}`);
-    for (let i = 0; i < tokens.length; i++) {
-      if (i + 1 < tokens.length && tokens[i] !== tokens[i + 1]) {
-        const bg = `${tokens[i]} ${tokens[i + 1]}`;
-        recordPhrase(bg, idx, 'Corpus Concept', item.title);
+    // 2. Title phrases get a dedicated origin ("Title Concept") so distinctive 2-3 word title themes are captured even at df=1
+    const titleRuns = extractContiguousRuns(item.title);
+    for (const rawRun of titleRuns) {
+      const run = trimGenericEdges(rawRun);
+      for (let i = 0; i < run.length; i++) {
+        if (i + 1 < run.length) {
+          recordPhrase([run[i], run[i + 1]], idx, 'Title Concept', item.title);
+        }
+        if (i + 2 < run.length) {
+          recordPhrase([run[i], run[i + 1], run[i + 2]], idx, 'Title Concept', item.title);
+        }
       }
-      if (tokens[i].length >= 5) {
-        recordPhrase(tokens[i], idx, 'Corpus Theme', item.title);
+    }
+
+    // 3. Contiguous 2-word and 3-word technical/domain phrases from summary
+    const runs = extractContiguousRuns(item.summary);
+    for (const rawRun of runs) {
+      const run = trimGenericEdges(rawRun);
+      for (let i = 0; i < run.length; i++) {
+        if (i + 1 < run.length) {
+          recordPhrase([run[i], run[i + 1]], idx, 'Corpus Concept', item.title);
+        }
+        if (i + 2 < run.length) {
+          recordPhrase([run[i], run[i + 1], run[i + 2]], idx, 'Corpus Concept', item.title);
+        }
       }
     }
   });
 
-  // Score phrases: prefer phrases appearing in 2..(55% of corpus) docs — informative themes,
-  // NOT ubiquitous query echoes (like "sydney sweeney" appearing in 90% of docs!)
-  const maxAllowedDf = Math.max(2, Math.floor(n * 0.55));
+  const maxAllowedDf = Math.max(2, Math.floor(n * 0.45));
   const candidates: Array<{ key: string; score: number; df: number; origin: string; titles: string[] }> = [];
 
   for (const [key, docSet] of phraseDocs.entries()) {
     const df = docSet.size;
     if (df > maxAllowedDf) continue;
     const origin = phraseOrigin.get(key)!;
-    const isTag = origin === 'Domain Tag' || origin === 'Domain Theme';
-    if (!isTag && df < 2 && n >= 10) continue;
+    const isCuratedOrTitle = origin === 'Domain Tag' || origin === 'Title Concept';
+    // Body-only phrases require df >= 2; verified tags & title concepts are eligible at df >= 1
+    if (!isCuratedOrTitle && df < 2 && n >= 14) continue;
 
-    const wordCount = key.split(/\s+/).length;
+    const words = key.split(' ');
+    let pmiSum = 0;
+    for (const w of words) {
+      const wDf = tokenDocFreq.get(w) ?? df;
+      pmiSum += Math.log((n * df) / Math.max(1, wDf * df) + 1);
+    }
+    const pmiBoost = 1 + pmiSum / words.length;
     const idf = Math.log((1 + n) / (1 + df));
-    // Prefer specific multi-word themes & curated tags over generic single words
-    const tagBonus = isTag
-      ? wordCount >= 2
-        ? 1.95
-        : 1.25
-      : wordCount >= 2
-        ? 1.5
-        : 0.72;
-    const score = idf * Math.log(1.5 + df) * tagBonus;
+    const multiDocBoost = df >= 2 ? 1.45 : 1.0;
+    const tagBonus = isCuratedOrTitle ? 1.4 : words.length === 3 ? 1.25 : 1.1;
+    const score = idf * Math.log(1.6 + df) * tagBonus * multiDocBoost * pmiBoost;
     candidates.push({ key, score, df, origin, titles: phraseContext.get(key) ?? [] });
   }
 
@@ -225,23 +372,23 @@ export function buildDomainNativeLexicon(items: CorpusItem[], maxConcepts = 65):
   const concepts: LexiconConcept[] = [];
   for (const c of candidates) {
     if (concepts.length >= maxConcepts) break;
-    // Deduplicate near-identical substrings
-    if (
-      concepts.some(
-        (k) =>
-          k.term.toLowerCase() === c.key ||
-          (c.key.length > 5 && k.term.toLowerCase().includes(c.key)) ||
-          (k.term.length > 5 && c.key.includes(k.term.toLowerCase()))
-      )
-    ) {
-      continue;
-    }
+    // Deduplicate overlapping phrases (avoid keeping both "projection mapping" and "dynamic projection mapping" if too close)
+    const cWords = new Set(c.key.split(' '));
+    const overlapsExisting = concepts.some((k) => {
+      const kLower = k.term.toLowerCase();
+      if (kLower === c.key || kLower.includes(c.key) || c.key.includes(kLower)) return true;
+      const kWords = kLower.split(' ');
+      const shared = kWords.filter((w) => cWords.has(w) && !ubiquitousTokens.has(w)).length;
+      return shared >= 2;
+    });
+    if (overlapsExisting) continue;
+
     const label = titleCase(c.key);
-    const examples = c.titles.slice(0, 2).join(', ');
+    const examples = c.titles.slice(0, 2).join('; ');
     concepts.push({
       term: label,
       domain: c.origin,
-      description: `Emergent corpus theme (${c.df}/${n} items, e.g. ${examples})`,
+      description: `Domain capability/theme present in ${c.df}/${n} corpus items (e.g. "${examples}")`,
     });
   }
 
@@ -267,7 +414,6 @@ export function fitLsaSpace(
   const corpusFeats = corpusTexts.map((t) => extractFeatures(t, surfaceCounts));
   const lexiconFeats = lexiconTexts.map((t) => extractFeatures(t));
 
-  // Resolve canonical human-readable surface form for every feature key
   const bestSurface = new Map<string, string>();
   for (const [feat, counts] of surfaceCounts.entries()) {
     let topWord = '';
@@ -278,7 +424,7 @@ export function fitLsaSpace(
         topWord = surf;
       }
     }
-    bestSurface.set(feat, topWord);
+    if (topWord) bestSurface.set(feat, topWord);
   }
 
   const vocabIndex = new Map<string, number>();
@@ -387,7 +533,21 @@ export function fitLsaSpace(
     corpusVectors.push(normalizeInPlace(vec));
   }
 
-  const foldInSparse = (q: SparseVec, dampOutOfSubspace = true): Float64Array => {
+  const foldInSparse = (
+    q: SparseVec,
+    fmap: Map<string, number>,
+    dampOutOfSubspace = true
+  ): Float64Array => {
+    // Count how many distinct non-generic word stems in q actually exist in the corpus
+    let sharedSpecificWords = 0;
+    if (dampOutOfSubspace) {
+      for (const [feat, w] of fmap.entries()) {
+        if (feat.startsWith('w:') && w >= 0.9 && (dfCorpus.get(feat) ?? 0) >= 1) {
+          sharedSpecificWords++;
+        }
+      }
+    }
+
     const sims = new Float64Array(nCorpus);
     let maxDocSim = 0;
     for (let i = 0; i < nCorpus; i++) {
@@ -408,41 +568,50 @@ export function fitLsaSpace(
     const rawNorm = Math.sqrt(normSq);
     if (rawNorm < 1e-10) return vec;
 
-    // Crucial linear-algebra safeguard: do NOT blow up tiny out-of-subspace noise
-    // (e.g., an industrial PLC term folded into a cinema corpus sharing 1 stray char 4-gram)
-    // to unit length! Smoothly attenuate vectors whose actual corpus overlap is near zero.
-    if (dampOutOfSubspace && maxDocSim < 0.09) {
-      const scale = Math.max(0, (maxDocSim - 0.02) / 0.07) / rawNorm;
+    // Require at least 2 shared specific domain words across >= 2 corpus docs (or strong TF-IDF match >= 0.16)
+    // before admitting an out-of-sample static lexicon vector at unit norm!
+    let docsMatching = 0;
+    for (let i = 0; i < nCorpus; i++) {
+      if (sims[i] >= 0.08) docsMatching++;
+    }
+    if (dampOutOfSubspace && (sharedSpecificWords < 2 || docsMatching < 2 || maxDocSim < 0.13)) {
+      const scale =
+        sharedSpecificWords < 2 || docsMatching < 2
+          ? 0
+          : Math.max(0, (maxDocSim - 0.06) / 0.08) / rawNorm;
       for (let r = 0; r < k; r++) vec[r] *= scale;
       return vec;
     }
     return normalizeInPlace(vec);
   };
 
-  const lexiconVectors = lexiconSparse.map((sp) => foldInSparse(sp, true));
+  const lexiconVectors = lexiconSparse.map((sp, idx) =>
+    foldInSparse(sp, lexiconFeats[idx], true)
+  );
 
   const embedText = (text: string): Float64Array => {
-    const sp = toSparseTfIdf(extractFeatures(text));
-    return foldInSparse(sp, false);
+    const fm = extractFeatures(text);
+    const sp = toSparseTfIdf(fm);
+    return foldInSparse(sp, fm, false);
   };
 
-  // Extract clean, UNSTEMMED human-readable keywords for clusters (penalizing global query echo!)
-  const extractTopKeywords = (docIndices: number[], topK = 4): string[] => {
+  // Extract clean, high-signal unstemmed cluster keywords (strongly preferring contiguous bigrams!)
+  const extractTopKeywords = (docIndices: number[], topK = 5): string[] => {
     const scores = new Map<string, number>();
-    const maxDfEcho = Math.max(3, Math.floor(nCorpus * 0.65));
+    const maxDfEcho = Math.max(3, Math.floor(nCorpus * 0.32));
 
     for (const di of docIndices) {
       const fmap = corpusFeats[di];
       if (!fmap) continue;
       for (const [feat, tf] of fmap.entries()) {
         if (!feat.startsWith('w:') && !feat.startsWith('bg:')) continue;
-        // Skip ubiquitous terms appearing across almost the entire corpus (e.g., query echo)
         if ((dfCorpus.get(feat) ?? 0) > maxDfEcho) continue;
         const idx = vocabIndex.get(feat);
         if (idx === undefined) continue;
         const surface = bestSurface.get(feat);
-        if (!surface || surface.length < 3) continue;
-        const bonus = feat.startsWith('bg:') ? 1.3 : 1.0;
+        if (!surface || surface.length < 4) continue;
+        // Prefer contiguous 2-word domain phrases for crisp cluster names
+        const bonus = feat.startsWith('bg:') ? 1.9 : 0.8;
         scores.set(surface, (scores.get(surface) ?? 0) + (1 + Math.log(tf)) * idf[idx] * bonus);
       }
     }
