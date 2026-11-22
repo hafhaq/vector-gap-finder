@@ -6,7 +6,13 @@
 
 import { CAPABILITY_LEXICON } from '../data/lexicon.ts';
 import { PRESET_DATASETS } from '../data/presets.ts';
-import { harvestWebCorpus, type WebSourceId } from '../data/webSearch.ts';
+import {
+  ALL_WEB_SOURCES,
+  DEFAULT_SOURCES,
+  harvestWebCorpus,
+  SOURCE_PACKS,
+  type WebSourceId,
+} from '../data/webSearch.ts';
 import { buildDomainNativeLexicon, fitLsaSpace, type LsaModelResult } from '../science/lsa.ts';
 import { cosineSim, normalizeInPlace } from '../science/math.ts';
 import {
@@ -87,8 +93,75 @@ export class VoidLensApp {
 
     this.initDialogClosedByFallback();
     this.populatePresets();
+    this.renderSourcePicker();
     this.bindUI();
     this.loadPreset(PRESET_DATASETS[0].id);
+  }
+
+  private renderSourcePicker(): void {
+    const packBar = this.el('source-pack-bar');
+    packBar.innerHTML = Object.entries(SOURCE_PACKS)
+      .map(
+        ([key, pack]) =>
+          `<button type="button" class="pack-btn ${key === 'broad' ? 'active' : ''}" data-pack="${key}">${pack.label}</button>`
+      )
+      .join('');
+
+    const groups = ['Science & Policy', 'Knowledge & Archives', 'Communities & Media', 'Software & AI'] as const;
+    const container = this.el('source-groups-container');
+    container.innerHTML = groups
+      .map((grp) => {
+        const srcs = ALL_WEB_SOURCES.filter((s) => s.group === grp);
+        return `
+          <fieldset class="source-grid">
+            <legend>${grp}</legend>
+            ${srcs
+              .map(
+                (s) => `
+              <label class="source-card">
+                <input type="checkbox" name="harvest-source" value="${s.id}" ${s.defaultEnabled ? 'checked' : ''} />
+                <div>
+                  <strong>${s.name}</strong>
+                  <span>${s.desc}</span>
+                </div>
+              </label>`
+              )
+              .join('')}
+          </fieldset>`;
+      })
+      .join('');
+
+    const syncCount = () => {
+      const checked = document.querySelectorAll('input[name="harvest-source"]:checked').length;
+      this.el('source-count').textContent = String(checked);
+    };
+
+    container.addEventListener('change', () => {
+      packBar.querySelectorAll('.pack-btn').forEach((b) => b.classList.remove('active'));
+      syncCount();
+    });
+
+    packBar.querySelectorAll<HTMLButtonElement>('.pack-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const pack = SOURCE_PACKS[btn.dataset.pack ?? 'broad'];
+        if (!pack) return;
+        const set = new Set(pack.sources);
+        document.querySelectorAll<HTMLInputElement>('input[name="harvest-source"]').forEach((cb) => {
+          cb.checked = set.has(cb.value as WebSourceId);
+        });
+        packBar.querySelectorAll('.pack-btn').forEach((b) => b.classList.toggle('active', b === btn));
+        syncCount();
+      });
+    });
+
+    syncCount();
+  }
+
+  private getSelectedSources(): WebSourceId[] {
+    const selected = Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[name="harvest-source"]:checked')
+    ).map((i) => i.value as WebSourceId);
+    return selected.length > 0 ? selected : DEFAULT_SOURCES;
   }
 
   private el<T extends HTMLElement>(id: string): T {
@@ -148,7 +221,7 @@ export class VoidLensApp {
         return;
       }
       input.blur(); // dismiss mobile keyboard so map is immediately visible
-      await this.runLiveResearch(query, ['openalex', 'wikipedia', 'hackernews', 'github'], 'replace');
+      await this.runLiveResearch(query, this.getSelectedSources(), 'replace');
     });
 
     // Preset switcher (includes "+ New Research Topic…")
@@ -638,11 +711,13 @@ export class VoidLensApp {
     }
 
     let completed = 0;
+    const maxNodes = Number(this.el<HTMLSelectElement>('harvest-density').value) || 160;
+    const perSourceLimit = Math.max(12, Math.min(22, Math.ceil((maxNodes / Math.max(1, sources.length)) * 1.4)));
     try {
-      const { items: harvested, resolvedQuery, wasCorrected } = await harvestWebCorpus(
+      const { items: harvested, resolvedQuery, wasCorrected, sourceCounts } = await harvestWebCorpus(
         query,
         sources,
-        13,
+        perSourceLimit,
         (p) => {
           if (p.status === 'done' || p.status === 'error') {
             completed++;
@@ -666,22 +741,23 @@ export class VoidLensApp {
 
       if (harvested.length < 5 && mode === 'replace') {
         this.hideNeuralProgress();
-        const msg = `Only ${harvested.length} relevant items found for "${resolvedQuery}" — try broader keywords or Merge mode.`;
+        const msg = `Only ${harvested.length} relevant items found for "${resolvedQuery}" — try broader keywords or enable All 18 Sources.`;
         if (dialog?.open) statusBox.textContent += `\n${msg}`;
         this.showToast(msg);
         return;
       }
 
       const finalItems =
-        mode === 'merge' ? [...this.items, ...harvested].slice(0, 120) : harvested.slice(0, 100);
+        mode === 'merge' ? [...this.items, ...harvested].slice(0, maxNodes + 40) : harvested.slice(0, maxNodes);
       dialog?.close();
       this.el<HTMLInputElement>('quick-topic-input').value = resolvedQuery;
       this.populatePresets(resolvedQuery);
       await this.setCorpus(finalItems);
       this.hideNeuralProgress();
+      const activeSourceCount = Object.keys(sourceCounts).length;
       const correctionNote = wasCorrected ? ` (auto-corrected from "${query}")` : '';
       this.showToast(
-        `Mapped ${finalItems.length} concepts for "${resolvedQuery}"${correctionNote} — found ${this.engineOutput?.result.gaps.length ?? 0} gaps!`
+        `Mapped ${finalItems.length} concepts from ${activeSourceCount} sources for "${resolvedQuery}"${correctionNote} — ${this.engineOutput?.result.gaps.length ?? 0} gaps found!`
       );
     } catch (err) {
       this.hideNeuralProgress();

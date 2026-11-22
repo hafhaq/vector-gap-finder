@@ -40,8 +40,8 @@
           <label class="sr-only" for="preset-select">Domain Preset</label>
           <select id="preset-select" class="ctrl-select" title="Switch starter domain or active live topic"></select>
 
-          <button type="button" id="btn-harvest" class="btn btn-ghost" title="Choose web sources or merge into current corpus">
-            Sources
+          <button type="button" id="btn-harvest" class="btn btn-ghost" title="Choose among 18 live web aggregators or merge into current corpus">
+            Sources (<span id="source-count">10</span>)
           </button>
 
           <button type="button" id="btn-corpus" class="btn btn-ghost">
@@ -246,37 +246,9 @@
           <button type="button" class="topic-pill" data-topic="precision agriculture drones">Agri-Drones</button>
         </div>
 
-        <fieldset class="source-grid">
-          <legend>Open Client-Side Sources</legend>
-          <label class="source-card">
-            <input type="checkbox" name="harvest-source" value="openalex" checked />
-            <div>
-              <strong>OpenAlex / Crossref Research</strong>
-              <span>250M+ engineering papers &amp; abstracts</span>
-            </div>
-          </label>
-          <label class="source-card">
-            <input type="checkbox" name="harvest-source" value="wikipedia" checked />
-            <div>
-              <strong>Wikipedia Technical Concepts</strong>
-              <span>Canonical architectures &amp; standards</span>
-            </div>
-          </label>
-          <label class="source-card">
-            <input type="checkbox" name="harvest-source" value="hackernews" checked />
-            <div>
-              <strong>Hacker News Discussions</strong>
-              <span>Real practitioner pain points &amp; launches</span>
-            </div>
-          </label>
-          <label class="source-card">
-            <input type="checkbox" name="harvest-source" value="github" checked />
-            <div>
-              <strong>GitHub Repositories</strong>
-              <span>Active open-source tools &amp; capabilities</span>
-            </div>
-          </label>
-        </fieldset>
+        <div class="pack-bar" id="source-pack-bar" role="group" aria-label="Source aggregator presets"></div>
+
+        <div id="source-groups-container" class="source-groups-container"></div>
 
         <div class="harvest-options">
           <label class="inline-check">
@@ -284,6 +256,14 @@
           </label>
           <label class="inline-check">
             <input type="radio" name="harvest-mode" value="merge" /> Merge into current corpus
+          </label>
+          <label class="inline-check" style="margin-inline-start:auto;">
+            Max nodes:
+            <select id="harvest-density" class="ctrl-select" style="padding:0.18rem 0.4rem;font-size:0.75rem;">
+              <option value="120">120 (Fast)</option>
+              <option value="160" selected>160 (Dense)</option>
+              <option value="200">200 (Ultra-Dense)</option>
+            </select>
           </label>
         </div>
 

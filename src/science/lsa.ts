@@ -165,7 +165,12 @@ export function buildDomainNativeLexicon(items: CorpusItem[], maxConcepts = 65):
 
   // 1. Harvest explicit categories & Wikipedia/OpenAlex/GitHub tags first (highest quality!)
   items.forEach((item, idx) => {
-    if (item.category && !/^(wikipedia|industry discussion|research paper|open source|custom corpus|encyclopedia concept)$/i.test(item.category)) {
+    if (
+      item.category &&
+      !/^(wikipedia|industry discussion|research paper|open source|custom corpus|encyclopedia concept|knowledge entity|peer-reviewed|community thread|news report|archive|book|dataset|clinical trial|regulatory filing|npm package|ml model|q&a|media)$/i.test(
+        item.category
+      )
+    ) {
       recordPhrase(item.category, idx, 'Domain Theme', item.title);
     }
     for (const tag of item.tags ?? []) {
@@ -358,7 +363,7 @@ export function fitLsaSpace(
     }
   }
 
-  const { eigenvalues, eigenvectors } = jacobiSymmetricEigen(G, nCorpus, 45);
+  const { eigenvalues, eigenvectors } = jacobiSymmetricEigen(G, nCorpus, nCorpus > 110 ? 22 : 45);
 
   const maxK = Math.min(targetDims, nCorpus - 1);
   let k = 0;

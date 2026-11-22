@@ -167,7 +167,7 @@ function runExactPCA(vectors: Float64Array[]): {
     }
   }
 
-  const { eigenvalues, eigenvectors } = jacobiSymmetricEigen(K, n, 45);
+  const { eigenvalues, eigenvectors } = jacobiSymmetricEigen(K, n, n > 110 ? 22 : 45);
   const posEigs: number[] = [];
   let totalVar = 0;
   for (let i = 0; i < n; i++) {

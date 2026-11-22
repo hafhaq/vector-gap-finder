@@ -98,8 +98,8 @@ export function computePersistentHomology(
   const edges: EdgeSimplex[] = [];
   let maxTreeEdge = 0;
 
-  // Choose filtration cutoff so graph becomes well-connected while bounding O(n^3) triangles
-  const edgeLimit = Math.min(allEdges.length, Math.max(n * 14, 420));
+  // Choose filtration cutoff so graph becomes well-connected while staying snappy up to N=200
+  const edgeLimit = Math.min(allEdges.length, Math.min(1350, Math.max(n * 9, 420)));
   const rawCutoff = allEdges[Math.min(allEdges.length - 1, edgeLimit - 1)].weight;
 
   for (let i = 0; i < allEdges.length; i++) {
