@@ -74,7 +74,21 @@ const GENERIC_SLOP_WORDS = new Set([
   'upcoming', 'highly', 'fully', 'widely', 'mostly', 'nearly', 'almost', 'real', 'environment',
 ]);
 
-/** Adjectives that can modify a noun at the start of a phrase, but must NEVER be the trailing head word of a noun phrase! */
+/**
+ * Commodity horizontal buzzwords & decade-old umbrella terms that are NEVER an "untapped 2026 discovery"
+ * on their own (prevents "Artificial Intelligence × Voice Controlled" or "Machine Learning × Smart Home").
+ */
+const COMMODITY_UMBRELLA_PHRASES = new Set([
+  'artificial intelligence', 'machine learning', 'deep learning', 'neural network', 'neural networks',
+  'internet of things', 'cloud computing', 'mobile application', 'mobile applications', 'web application',
+  'voice controlled', 'voice control', 'home automation', 'smart home', 'smart homes', 'heating systems',
+  'heating system', 'air conditioning', 'big data', 'data analytics', 'data science', 'computer science',
+  'computer vision', 'social media', 'digital transformation', 'industry 4 0', 'control system',
+  'control systems', 'system automation', 'automation system', 'automation systems', 'automated system',
+  'automated systems', 'control theory', 'feedback control', 'process control', 'industrial automation',
+  'literature review', 'systematic review', 'case study', 'experimental results', 'simulation results',
+  'future work', 'future research', 'proposed method', 'proposed system', 'existing systems',
+]);
 const TRAILING_ADJECTIVES = new Set([
   'high', 'low', 'higher', 'lower', 'theoretical', 'experimental', 'practical', 'commercial',
   'industrial', 'conventional', 'traditional', 'modern', 'advanced', 'dynamic', 'static',
@@ -89,6 +103,7 @@ const TRAILING_ADJECTIVES = new Set([
   'flexible', 'efficient', 'accurate', 'precise', 'deterministic', 'stochastic', 'adaptive',
   'predictive', 'generative', 'cognitive', 'neural', 'symbolic', 'semantic', 'topological',
   'conductive', 'resistive', 'capacitive', 'inductive', 'upcoming', 'semiotic', 'peircean',
+  'controlled', 'automated', 'connected', 'powered', 'driven', 'enabled', 'assisted', 'guided',
 ]);
 
 function normalizeAscii(text: string): string {
@@ -250,19 +265,27 @@ export function buildDomainNativeLexicon(items: CorpusItem[], maxConcepts = 65):
   const n = items.length;
   if (n === 0) return [];
 
-  // Identify ubiquitous query-echo tokens (appearing in > 48% of corpus docs)
+  // Identify ubiquitous query-echo tokens AND their morphological stems (appearing in > 36% of corpus docs)
   const tokenDocFreq = new Map<string, number>();
+  const stemDocFreq = new Map<string, number>();
   for (const item of items) {
     const uniq = new Set(tokenizeTechnical(`${item.title} ${item.summary}`));
-    for (const tok of uniq) tokenDocFreq.set(tok, (tokenDocFreq.get(tok) ?? 0) + 1);
+    const uniqStems = new Set<string>();
+    for (const tok of uniq) {
+      tokenDocFreq.set(tok, (tokenDocFreq.get(tok) ?? 0) + 1);
+      uniqStems.add(lightStem(tok));
+    }
+    for (const st of uniqStems) {
+      stemDocFreq.set(st, (stemDocFreq.get(st) ?? 0) + 1);
+    }
   }
-  const ubiquitousTokens = new Set<string>();
-  const hyperUbiquitousTokens = new Set<string>();
-  const echoThreshold = Math.max(4, Math.floor(n * 0.42));
-  const hyperThreshold = Math.max(5, Math.floor(n * 0.56));
-  for (const [tok, df] of tokenDocFreq.entries()) {
-    if (df >= echoThreshold) ubiquitousTokens.add(tok);
-    if (df >= hyperThreshold) hyperUbiquitousTokens.add(tok);
+  const ubiquitousStems = new Set<string>();
+  const hyperUbiquitousStems = new Set<string>();
+  const echoThreshold = Math.max(4, Math.floor(n * 0.36));
+  const hyperThreshold = Math.max(5, Math.floor(n * 0.54));
+  for (const [st, df] of stemDocFreq.entries()) {
+    if (df >= echoThreshold) ubiquitousStems.add(st);
+    if (df >= hyperThreshold) hyperUbiquitousStems.add(st);
   }
 
   const phraseDocs = new Map<string, Set<number>>();
@@ -272,15 +295,16 @@ export function buildDomainNativeLexicon(items: CorpusItem[], maxConcepts = 65):
   const recordPhrase = (words: string[], docIdx: number, origin: string, titleSample: string) => {
     if (words.length < 2 || words.length > 3) return; // Strictly require 2-3 word specific phrases!
     if (!isHighSignalPhrase(words)) return;
-    // Block phrases containing hyper-ubiquitous subject tokens (>58% of corpus, e.g. "sydney", "sweeney")
-    // or where >= 2 words are ubiquitous query echoes (e.g. "projection mapping", "augmented reality")
-    if (words.some((w) => hyperUbiquitousTokens.has(w))) return;
-    if (words.filter((w) => ubiquitousTokens.has(w)).length >= 2) return;
     // Reject duplicate consecutive words
     if (words[0] === words[1] || (words[2] && words[1] === words[2])) return;
 
     const key = words.join(' ');
-    if (key.length < 7 || key.length > 46) return;
+    if (key.length < 8 || key.length > 46) return;
+    if (COMMODITY_UMBRELLA_PHRASES.has(key)) return;
+
+    const stems = words.map(lightStem);
+    if (stems.some((st) => hyperUbiquitousStems.has(st) && st.length >= 5 && n <= 35)) return;
+    if (stems.filter((st) => ubiquitousStems.has(st)).length >= 2) return;
 
     let set = phraseDocs.get(key);
     if (!set) {
@@ -378,7 +402,7 @@ export function buildDomainNativeLexicon(items: CorpusItem[], maxConcepts = 65):
       const kLower = k.term.toLowerCase();
       if (kLower === c.key || kLower.includes(c.key) || c.key.includes(kLower)) return true;
       const kWords = kLower.split(' ');
-      const shared = kWords.filter((w) => cWords.has(w) && !ubiquitousTokens.has(w)).length;
+      const shared = kWords.filter((w) => cWords.has(w) && !ubiquitousStems.has(lightStem(w))).length;
       return shared >= 2;
     });
     if (overlapsExisting) continue;
@@ -598,7 +622,7 @@ export function fitLsaSpace(
   // Extract clean, high-signal unstemmed cluster keywords (strongly preferring contiguous bigrams!)
   const extractTopKeywords = (docIndices: number[], topK = 5): string[] => {
     const scores = new Map<string, number>();
-    const maxDfEcho = Math.max(3, Math.floor(nCorpus * 0.32));
+    const maxDfEcho = Math.max(3, Math.floor(nCorpus * 0.28));
 
     for (const di of docIndices) {
       const fmap = corpusFeats[di];
@@ -606,10 +630,20 @@ export function fitLsaSpace(
       for (const [feat, tf] of fmap.entries()) {
         if (!feat.startsWith('w:') && !feat.startsWith('bg:')) continue;
         if ((dfCorpus.get(feat) ?? 0) > maxDfEcho) continue;
+        // For bigrams, also reject if BOTH component word stems exceed 34% corpus frequency (blocks "System Automation")
+        if (feat.startsWith('bg:')) {
+          const parts = feat.slice(3).split('_');
+          if (
+            (dfCorpus.get(`w:${parts[0]}`) ?? 0) > nCorpus * 0.34 &&
+            (dfCorpus.get(`w:${parts[1]}`) ?? 0) > nCorpus * 0.34
+          ) {
+            continue;
+          }
+        }
         const idx = vocabIndex.get(feat);
         if (idx === undefined) continue;
         const surface = bestSurface.get(feat);
-        if (!surface || surface.length < 4) continue;
+        if (!surface || surface.length < 4 || COMMODITY_UMBRELLA_PHRASES.has(surface)) continue;
         // Prefer contiguous 2-word domain phrases for crisp cluster names
         const bonus = feat.startsWith('bg:') ? 1.9 : 0.8;
         scores.set(surface, (scores.get(surface) ?? 0) + (1 + Math.log(tf)) * idf[idx] * bonus);

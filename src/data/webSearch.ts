@@ -63,7 +63,7 @@ export const ALL_WEB_SOURCES: SourceMeta[] = [
   // Science & Policy
   { id: 'openalex', name: 'OpenAlex Research', desc: '250M+ engineering & scientific papers', group: 'Science & Policy', defaultEnabled: true },
   { id: 'crossref', name: 'Crossref DOIs', desc: '150M+ IEEE, ACM, Springer & journal works', group: 'Science & Policy', defaultEnabled: true },
-  { id: 'datacite', name: 'DataCite Datasets', desc: 'Open research datasets & technical reports', group: 'Science & Policy', defaultEnabled: false },
+  { id: 'datacite', name: 'DataCite Datasets', desc: 'Open research datasets & technical reports', group: 'Science & Policy', defaultEnabled: true },
   { id: 'pubmed', name: 'PubMed / NCBI', desc: '37M+ biomedical & life-science studies', group: 'Science & Policy', defaultEnabled: false },
   { id: 'clinicaltrials', name: 'ClinicalTrials.gov', desc: 'Global medical device & biotech trials', group: 'Science & Policy', defaultEnabled: false },
   { id: 'federalreg', name: 'US Federal Register', desc: 'Live FDA, DOE, FCC & regulatory filings', group: 'Science & Policy', defaultEnabled: false },
@@ -71,14 +71,14 @@ export const ALL_WEB_SOURCES: SourceMeta[] = [
   // Knowledge & Archives
   { id: 'wikipedia', name: 'Wikipedia Concepts', desc: 'Canonical architectures, films & topics', group: 'Knowledge & Archives', defaultEnabled: true },
   { id: 'wikidata', name: 'Wikidata Entities', desc: 'Structured companies, products & standards', group: 'Knowledge & Archives', defaultEnabled: true },
-  { id: 'openlibrary', name: 'Open Library Books', desc: 'Published books, textbooks & field guides', group: 'Knowledge & Archives', defaultEnabled: true },
+  { id: 'openlibrary', name: 'Open Library Books', desc: 'Published books, textbooks & field guides', group: 'Knowledge & Archives', defaultEnabled: false },
   { id: 'archiveorg', name: 'Internet Archive', desc: 'Manuals, whitepapers, reports & media', group: 'Knowledge & Archives', defaultEnabled: false },
   { id: 'wikinews', name: 'Wikinews', desc: 'Open collaborative news reporting', group: 'Knowledge & Archives', defaultEnabled: false },
 
   // Communities & Media
   { id: 'hackernews', name: 'Hacker News', desc: 'Practitioner pain points & product launches', group: 'Communities & Media', defaultEnabled: true },
   { id: 'lemmy', name: 'Lemmy Communities', desc: 'Federated Reddit-style topic discussions', group: 'Communities & Media', defaultEnabled: false },
-  { id: 'itunes', name: 'Podcasts & Media', desc: 'Apple Podcasts, films & creator ecosystems', group: 'Communities & Media', defaultEnabled: true },
+  { id: 'itunes', name: 'Podcasts & Media', desc: 'Apple Podcasts, films & creator ecosystems', group: 'Communities & Media', defaultEnabled: false },
   { id: 'stackexchange', name: 'Stack Exchange Q&A', desc: 'Technical Q&A & implementation bottlenecks', group: 'Communities & Media', defaultEnabled: true },
 
   // Software & AI
@@ -176,7 +176,12 @@ function cleanSummaryText(raw: string): string {
  * at least one core query token must appear in the TITLE itself (preventing 2-hour radio/TV transcripts
  * that mention a term once in passing from entering the corpus).
  */
+/** Reject generic index pages, beginner self-help audiobooks, and hobbyist Arduino overview tropes */
+const LOW_SIGNAL_TITLE_PATTERNS =
+  /^(outline of|list of|index of|glossary of|history of|bibliography of)\b|\b(unabridged|beginner'?s guide|for beginners|time management|decision fatigue|without learning to code|save hours|voice controlled home automation|home automation using arduino)\b/i;
+
 function isRelevantToQuery(title: string, summary: string, query: string, requireTitleMatch = false): boolean {
+  if (LOW_SIGNAL_TITLE_PATTERNS.test(title)) return false;
   if (!isLikelyEnglish(`${title}. ${summary}`)) return false;
   const normTitle = title
     .normalize('NFD')
@@ -243,25 +248,23 @@ function reconstructOpenAlexAbstract(inverted?: Record<string, number[]>): strin
   return words.map((w) => w[1]).join(' ').slice(0, 480);
 }
 
-// 1. OpenAlex (requires real abstract + English)
+// 1. OpenAlex (requires real abstract + recent 2022-2026 frontier research + English)
 async function fetchOpenAlex(query: string, limit: number): Promise<CorpusItem[]> {
-  const url = `https://api.openalex.org/works?search=${encodeURIComponent(query)}&per-page=${limit + 12}&sort=relevance_score:desc&filter=from_publication_date:2019-01-01,language:en`;
+  const url = `https://api.openalex.org/works?search=${encodeURIComponent(query)}&per-page=${limit + 12}&sort=relevance_score:desc&filter=from_publication_date:2022-01-01,language:en`;
   const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error(`OpenAlex HTTP ${res.status}`);
   const data = await res.json();
   const items: CorpusItem[] = [];
   for (const work of data.results ?? []) {
     const title = cleanSummaryText(work.display_name ?? '');
-    if (!title || title.length < 10) continue;
+    if (!title || title.length < 12) continue;
     const abstract = cleanSummaryText(reconstructOpenAlexAbstract(work.abstract_inverted_index));
-    if (abstract.length < 75) continue;
+    if (abstract.length < 85) continue;
     const textLower = `${title} ${abstract}`.toLowerCase();
     const concepts = (work.concepts ?? [])
       .filter((c: { level?: number; score?: number; display_name?: string }) => {
         if ((c.level ?? 2) < 2) return false;
         const name = (c.display_name ?? '').toLowerCase();
-        // Verify the concept's words actually appear in the paper (prevents OpenAlex
-        // word-sense collisions like tagging "projection mapping" with "Relational algebra"!)
         const words = name.split(/\s+/).filter((w) => w.length >= 4);
         return words.length > 0 && words.every((w) => textLower.includes(w));
       })
@@ -284,9 +287,9 @@ async function fetchOpenAlex(query: string, limit: number): Promise<CorpusItem[]
   return items;
 }
 
-// 2. Crossref (requires has-abstract:true + English)
+// 2. Crossref (requires has-abstract:true + recent 2022-2026 frontier works + English)
 async function fetchCrossref(query: string, limit: number): Promise<CorpusItem[]> {
-  const url = `https://api.crossref.org/works?query=${encodeURIComponent(query)}&filter=has-abstract:true&rows=${limit + 10}&sort=relevance&order=desc`;
+  const url = `https://api.crossref.org/works?query=${encodeURIComponent(query)}&filter=has-abstract:true,from-pub-date:2022-01-01&rows=${limit + 12}&sort=relevance&order=desc`;
   const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error(`Crossref HTTP ${res.status}`);
   const data = await res.json();

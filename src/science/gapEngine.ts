@@ -219,9 +219,14 @@ export function decodeGapVector(
       ? Math.max(0, Math.min(1, 1 - Math.max(0, localMaxSim)))
       : Math.max(0, Math.min(1, 1 - Math.max(0, maxCorpusSim)));
 
+    // CSLS Hubness Penalization (Conneau et al., FAIR 2018):
+    // Broad commodity terms sit near the domain centroid and act as "semantic hubs" correlating
+    // with every midpoint vector. Subtracting 0.28 * domainAlign rewards specific frontier mechanisms!
+    const cslsSim = Math.max(0, sim - 0.28 * Math.max(0, domainAlign));
+
     const rawCombined =
-      0.46 * Math.max(0, sim) +
-      0.26 * Math.max(0, bridgeSupport) +
+      0.46 * cslsSim +
+      0.26 * Math.max(0, bridgeSupport - 0.18 * Math.max(0, domainAlign)) +
       0.14 * Math.max(0, resAlign) +
       0.14 * novelty * Math.max(0.15, (sim + 1) * 0.5);
     const combined = isNative ? rawCombined * 1.12 : rawCombined * 1.06;
