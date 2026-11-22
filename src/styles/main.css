@@ -236,6 +236,7 @@ body {
   font-family: inherit;
   font-size: 0.8rem;
   font-weight: 550;
+  text-decoration: none;
   cursor: pointer;
   transition: background 140ms ease, border-color 140ms ease, transform 80ms ease;
   white-space: nowrap;

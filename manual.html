@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VoidLens Instruction Manual — Plain-English &amp; Data Scientist Guide</title>
+    <meta
+      name="description"
+      content="Complete guide to VoidLens: how to use every feature, interpret cosine similarity and percentages, and evaluate whether a detected idea gap is mathematically valid."
+    />
+  </head>
+  <body>
+    <header class="manual-bar">
+      <div class="manual-bar-inner">
+        <a href="./index.html" class="back-link">← Back to Observatory</a>
+
+        <div class="audience-switch" role="tablist" aria-label="Manual reading level">
+          <button
+            type="button"
+            role="tab"
+            id="tab-layman"
+            aria-selected="true"
+            aria-controls="view-layman"
+            class="aud-btn active"
+          >
+            Plain-English Guide
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-scientist"
+            aria-selected="false"
+            aria-controls="view-scientist"
+            class="aud-btn"
+          >
+            Data Scientist Reference
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="manual-shell">
+      <nav class="toc" aria-label="Manual sections">
+        <div class="toc-title">On This Page</div>
+        <ul id="toc-list"></ul>
+      </nav>
+
+      <main class="manual-main">
+        <!-- ================================================================ -->
+        <!-- VIEW 1: PLAIN-ENGLISH / LAYMAN GUIDE                             -->
+        <!-- ================================================================ -->
+        <article id="view-layman" role="tabpanel" aria-labelledby="tab-layman" class="manual-view">
+          <header class="hero">
+            <span class="eyebrow">Plain-English Manual · For Explorers, Founders &amp; Product Builders</span>
+            <h1>How to Read the Map &amp; Trust the Gaps</h1>
+            <p class="lead">
+              VoidLens turns a sea of existing products, papers, and discussions into a map of ideas—then uses geometry to point at the <strong>empty courtyards surrounded by crowded neighborhoods</strong>. This guide explains every number, every button, and how to judge whether a suggested gap is genuinely real.
+            </p>
+          </header>
+
+          <section id="l-mental-model" data-toc="1. The Big Idea">
+            <h2>1. The Big Idea: A Neighborhood Map of Concepts</h2>
+            <p>
+              Imagine laying out every industrial PLC product, patent, or research paper on a giant table so that <strong>ideas that do similar jobs sit close together</strong> and <strong>ideas that do different jobs sit far apart</strong>.
+            </p>
+            <ul>
+              <li><strong>Colored dots</strong> are <em>existing things</em> (products, papers, open-source projects, or articles collected from the web).</li>
+              <li><strong>Glowing blue/teal clouds</strong> show <em>crowdedness</em> (lots of competing ideas piled on top of each other).</li>
+              <li><strong>Amber diamonds (<code>#1</code>, <code>#2</code>, …)</strong> are <em>detected gaps</em>—empty spots sitting <strong>between</strong> two or more busy neighborhoods where nobody has built a bridge yet.</li>
+            </ul>
+            <div class="callout callout-tip">
+              <strong>Why "far away" alone is NOT a good gap:</strong> "Banana smoothies" is very far from Industrial PLCs, so its empty space is huge—but it's useless. VoidLens specifically hunts for the <em>Goldilocks zone</em>: spots that are <strong>empty right now</strong>, yet <strong>surrounded on multiple sides by real industry capabilities</strong>.
+            </div>
+          </section>
+
+          <section id="l-trust" data-toc="2. Can You Trust the Space &amp; Gaps?">
+            <h2>2. How Can I Trust the "Gravity" of Nodes &amp; Whether a Gap Is Valid?</h2>
+            <p>
+              This is the most important question you can ask. A chart with glowing dots can easily look scientific even when it's misleading. Here is how VoidLens earns (and tests) your trust—and where you should stay skeptical:
+            </p>
+
+            <h3>A. What creates the "gravity" pulling nodes together?</h3>
+            <p>
+              Every document is turned into a list of numbers (a <strong>vector</strong>) representing its meaning:
+            </p>
+            <ul>
+              <li><strong>LSA-SVD (default, instant):</strong> Reads shared technical words, two-word phrases (like <em>"digital twin"</em> or <em>"zero trust"</em>), and word roots. Great for fast exploration, but it can miss synonyms that share no spelling (like <em>"latency"</em> vs. <em>"delay"</em>).</li>
+              <li><strong>Neural 384-D (click <code>Neural 384-D</code> in the top bar):</strong> Runs a real AI language model (<code>MiniLM-L6-v2</code>) directly inside your browser. It understands meaning and synonyms, not just spelling. <strong>For high-stakes decisions, always turn on Neural 384-D.</strong></li>
+            </ul>
+
+            <h3>B. Doesn't squishing ideas onto a flat 2D screen distort distances?</h3>
+            <p>
+              <strong>Yes—just like flattening the round Earth onto a flat map stretches Greenland!</strong> That is why VoidLens does two crucial things:
+            </p>
+            <ol>
+              <li><strong>The gap math runs in full high-dimensional space, NOT on the flat 2D drawing.</strong> Every <code>cos</code> number, density reading, and topological hole is measured in the full 32-D or 384-D space before anything is projected onto your screen.</li>
+              <li><strong>We display an Honesty Meter right on the chart:</strong>
+                <ul>
+                  <li><code>Trust T(k)</code> (e.g., <strong>84%</strong>): Tells you how often two dots that look like neighbors on screen are <em>actually</em> neighbors in full meaning-space. Above <strong>80%</strong> is solid; below <strong>65%</strong> means rely on the right-hand numbers more than visual proximity.</li>
+                  <li><code>Stress-1</code> (e.g., <strong>0.24</strong>): Measures overall distance stretching (lower is better; under <strong>0.25</strong> is good).</li>
+                </ul>
+              </li>
+            </ol>
+
+            <h3>C. Four Proof Checks That Separate Real Gaps from Glitches</h3>
+            <p>Before you bet time or money on any <code>#1</code> gap, inspect its four scorecard meters and run this 4-step sanity check:</p>
+            <div class="checklist-grid">
+              <div class="check-card">
+                <strong>1. Check the Corpus (Garbage In = Fake Gaps)</strong>
+                <p>If your search only pulled 18 papers and missed a major vendor category, VoidLens will call that missing vendor a "gap." Click <code>Corpus (N)</code> or <code>Sources</code> to verify the major players are actually in the dataset.</p>
+              </div>
+              <div class="check-card">
+                <strong>2. Verify the Surrounding Anchors</strong>
+                <p>Look at <em>Surrounding Frontier Offerings</em> in the right panel. Do those 3–4 existing items genuinely make sense together? If they look unrelated, the gap may be a corpus artifact.</p>
+              </div>
+              <div class="check-card">
+                <strong>3. Look for H₁ Cavity &amp; Bridge Entropy</strong>
+                <p>A gap marked <code>H1 CAVITY</code> with high <strong>Bridge Entropy (&gt; 60%)</strong> means real existing products form a closed ring around an empty center bridging 2–3 distinct domains—a much stronger signal than an isolated edge outlier.</p>
+              </div>
+              <div class="check-card">
+                <strong>4. Upgrade to Neural 384-D &amp; Re-Check</strong>
+                <p>If a gap survives when switching from <code>LSA-SVD</code> to <code>Neural 384-D</code>, it's a real semantic void—not just a vocabulary coincidence.</p>
+              </div>
+            </div>
+
+            <div class="callout callout-warn">
+              <strong>Important Reality Check:</strong> Math can prove that <em>"nobody has combined X and Y in this corpus."</em> Math <strong>cannot</strong> prove whether combining X and Y is physically possible, profitable, or legal—sometimes a space is empty because it's a bad idea or blocked by physics/regulation. VoidLens hands you high-signal hypotheses; your domain judgment decides which ones are gold.
+            </div>
+          </section>
+
+          <section id="l-numbers" data-toc="3. What Every Number &amp; % Means">
+            <h2>3. Decoding Every Number, <code>cos</code> Value, and Percentage</h2>
+            <p>Every badge in VoidLens has a plain-English meaning:</p>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Label you see</th>
+                    <th>Plain-English meaning</th>
+                    <th>How to read the number</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>cos 0.72</code></td>
+                    <td><strong>Cosine Similarity</strong> — how aligned two ideas are in meaning (from −1 to +1).</td>
+                    <td>
+                      <strong>0.80 – 1.00:</strong> Nearly the same thing<br />
+                      <strong>0.55 – 0.79:</strong> Close cousins / same category<br />
+                      <strong>0.30 – 0.54:</strong> Related neighbors<br />
+                      <strong>&lt; 0.25:</strong> Very different concepts
+                    </td>
+                  </tr>
+                  <tr>
+                    <td><code>White-Space Index: 84%</code></td>
+                    <td>Overall opportunity score combining emptiness, cross-cluster bridging, relevance, and topological proof.</td>
+                    <td><strong>75%+</strong> strong candidate; <strong>50–74%</strong> moderate; <strong>&lt; 45%</strong> either crowded or off-topic.</td>
+                  </tr>
+                  <tr>
+                    <td><code>Void Sparsity</code> &amp; <code>d_min</code></td>
+                    <td>How empty the area is around this gap. <code>d_min</code> is the distance to the closest existing product (<code>1 − cos</code>).</td>
+                    <td>Higher % = fewer competitors nearby. <code>d_min &gt; 0.45</code> means no existing item in the corpus is close.</td>
+                  </tr>
+                  <tr>
+                    <td><code>Bridge Entropy</code></td>
+                    <td>Does this gap connect <em>different</em> fields (e.g., OT Security + Motion Control) rather than sitting inside one silo?</td>
+                    <td><strong>70%+</strong> = true cross-disciplinary bridge between 2–4 clusters. <strong>0%</strong> = surrounded by only one cluster.</td>
+                  </tr>
+                  <tr>
+                    <td><code>Domain Hull Support</code> &amp; <code>vMF ρ</code></td>
+                    <td>Sanity check proving the gap actually belongs to your topic rather than drifting into random unrelated space.</td>
+                    <td><strong>60%+</strong> = firmly inside your industry's footprint. Very low % = likely off-topic noise.</td>
+                  </tr>
+                  <tr>
+                    <td><code>H₁ Cavity Alignment</code></td>
+                    <td>Whether the gap sits inside a mathematically verified "donut hole" (a closed loop of existing ideas).</td>
+                    <td><strong>50%+</strong> = backed by a real loop of surrounding ideas. <code>continuous</code> = open valley between clusters.</td>
+                  </tr>
+                  <tr>
+                    <td><code>nov 74%</code> (on decoded concepts)</td>
+                    <td><strong>Novelty</strong> — how rarely that suggested capability appears anywhere in your current corpus.</td>
+                    <td>High <code>cos</code> + high <code>nov %</code> = a capability that fits the gap AND isn't already saturated in the market.</td>
+                  </tr>
+                  <tr>
+                    <td><code>Burt 0.42</code> (Cluster list)</td>
+                    <td>How "boxed in" a cluster is (sociologist Ronald Burt's Structural Holes score).</td>
+                    <td><strong>Lower Burt</strong> = that cluster touches many different worlds (good broker). <strong>Higher Burt</strong> = isolated silo.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="l-features" data-toc="4. Complete Feature Walkthrough">
+            <h2>4. Feature-by-Feature Walkthrough</h2>
+
+            <h3>Starting a New Research Topic</h3>
+            <ul>
+              <li><strong>Top Search Bar (<code>New research topic…</code>):</strong> Type any market or tech area (e.g., <em>"solid state batteries"</em>, <em>"surgical robotics"</em>, <em>"carbon capture"</em>) and press <strong>Enter</strong> or tap <strong>Research</strong>. VoidLens live-fetches papers, Wikipedia concepts, Hacker News discussions, and GitHub projects directly in your browser and builds a fresh map.</li>
+              <li><strong>Preset Dropdown:</strong> Switch between curated 2026 starter maps (Industrial PLCs, AI Coding Agents, Physical AI Robotics), see your active <code>★ Live: …</code> topic, or pick <code>+ New Research Topic…</code>.</li>
+              <li><strong><code>Sources</code> Button:</strong> Fine-tune which live sources to query, or choose <strong>Merge into current corpus</strong> to combine two different searches (great for cross-industry discovery, like merging <em>"industrial PLC"</em> + <em>"post-quantum cryptography"</em>!).</li>
+              <li><strong><code>Corpus (N)</code> Button:</strong> Paste your own competitor list, interview notes, or product specs (one per line as <code>Title: Description</code>), or import/export JSON files.</li>
+            </ul>
+
+            <h3>Exploring the Spatial Map</h3>
+            <ul>
+              <li><strong>Layer Chips:</strong>
+                <ul>
+                  <li><code>vMF Density</code> — glowing heatmap of where competitors are concentrated.</li>
+                  <li><code>Delaunay</code> — geometric web linking neighboring ideas into triangles; huge interior triangles highlight empty voids.</li>
+                  <li><code>H₁ Loops</code> — dashed purple rings showing closed loops of existing ideas enclosing an empty cavity.</li>
+                  <li><code>k-NN Graph</code> — connects each item to its 4 closest true high-dimensional cousins (helps spot when the 2D screen stretched two true neighbors apart!).</li>
+                  <li><code>Clusters</code> &amp; <code>Gap Beacons</code> — toggles group labels and amber <code>#1…#8</code> gap diamonds.</li>
+                </ul>
+              </li>
+              <li><strong>Clicking &amp; Probing:</strong>
+                <ul>
+                  <li>Tap any <strong>colored dot</strong> to read that offering and see its closest competitors.</li>
+                  <li>Tap any <strong>amber diamond</strong> to open its full Gap Scorecard and see dashed gold lines tethering it to the existing offerings around it.</li>
+                  <li><strong>⊕ Probe Void (or <code>Shift+Click</code> on desktop):</strong> Click <em>any empty spot</em> on the map to ask, "What missing idea would live right here?" VoidLens scores that spot and decodes it in real time.</li>
+                </ul>
+              </li>
+              <li><strong>Mobile Navigation:</strong> Swiping up/down over the chart scrolls the page normally. To pan or pinch-zoom inside the chart on a phone, tap <strong>✋ Pan Map</strong> (or use the <strong>+ / −</strong> zoom buttons).</li>
+            </ul>
+
+            <h3>Left &amp; Right Sidebar Power Tools</h3>
+            <ul>
+              <li><strong>Vector Algebra Lab (<code>A + B − C</code>):</strong> Test your own intuition! Type two concepts you want to combine (<code>+ A</code>, <code>+ B</code>) and something you want to remove (<code>− C</code>, e.g., <em>"cloud latency"</em>). A green <code>∑</code> marker drops onto the map showing whether your idea lands in a crowded red ocean or a high-scoring blue ocean.</li>
+              <li><strong>Scientific Weights &amp; Parameters:</strong> Switch between <code>UMAP Manifold</code> (best for seeing clusters) and <code>Exact PCA</code> (strict flat shadow), adjust cluster count, or tune the 4 sliders if you care more about <em>emptiness</em> vs. <em>bridging silos</em>.</li>
+              <li><strong>TDA Persistence Diagram:</strong> Each purple dot is a loop of ideas. Dots high above the dashed diagonal line are big, sturdy cavities; hover over a purple dot to light up that exact ring on the map.</li>
+              <li><strong><code>Copy Brief</code>:</strong> Copies a structured Markdown summary of the selected gap (metrics, bounding products, decoded missing capabilities, and an executive synthesis prompt) so you can paste it into any document or LLM.</li>
+            </ul>
+          </section>
+        </article>
+
+        <!-- ================================================================ -->
+        <!-- VIEW 2: DATA SCIENTIST / MATHEMATICAL REFERENCE                  -->
+        <!-- ================================================================ -->
+        <article id="view-scientist" role="tabpanel" aria-labelledby="tab-scientist" class="manual-view" hidden>
+          <header class="hero hero-sci">
+            <span class="eyebrow">Technical Specification · For Data Scientists, ML Engineers &amp; Applied Topologists</span>
+            <h1>Mathematical Architecture, Fidelity Bounds &amp; Epistemic Limits</h1>
+            <p class="lead">
+              VoidLens formulates niche discovery as <strong>interior density-valley and 1-dimensional topological cavity detection on the unit hypersphere S<sup>d−1</sup></strong>, paired with orthogonal subspace concept inversion. Below are the exact operators, scoring equations, distortion diagnostics, and known failure modes.
+            </p>
+          </header>
+
+          <section id="s-embeddings" data-toc="1. Hyperspherical Embeddings">
+            <h2>1. Hyperspherical Embedding Spaces (S<sup>d−1</sup>)</h2>
+            <p>
+              All corpus items <code>{x₁, …, xₙ}</code> and cross-domain lexicon primitives <code>{l₁, …, lₘ}</code> are embedded and L₂-normalized onto the unit hypersphere <code>S^(d−1)</code>, where cosine similarity <code>s(u, v) = uᵀv ∈ [−1, 1]</code>, cosine distance <code>d_cos(u, v) = 1 − uᵀv ∈ [0, 2]</code>, and intrinsic geodesic distance <code>d_g(u, v) = arccos(uᵀv)</code>.
+            </p>
+
+            <h3>Engine A: Dual-Gram Truncated SVD (LSA-SVD, Instant)</h3>
+            <ul>
+              <li><strong>Feature Extraction:</strong> Sublinear TF <code>1 + ln(tf)</code> weighted by smoothed corpus+lexicon IDF over stemmed unigrams (weight 1.0), word bigrams (weight 0.85), and padded character 4-grams (weight 0.22) for technical morphology invariance.</li>
+              <li><strong>Exact Decomposition:</strong> Rather than solving a <code>V × V</code> vocabulary eigensystem, VoidLens forms the <code>N × N</code> Dual Gram Matrix <code>G = X Xᵀ</code> and solves <code>G U = U Λ</code> via exact <strong>Jacobi symmetric rotations</strong> (residual <code>‖Av − λv‖ &lt; 10⁻⁷</code>).</li>
+              <li><strong>Caron Anisotropy Mitigation:</strong> Latent coordinates apply mild singular power scaling <code>Z_i[r] = U_r[i] · σ_r^0.85</code> (Caron 2001), reducing hubness on <code>S^(k−1)</code> before unit renormalization.</li>
+              <li><strong>Exact Out-of-Sample Folding-In:</strong> Any lexicon term or vector-algebra query <code>q</code> projects identically via <code>z(q)[r] = σ_r^(−0.15) Σᵢ (q · xᵢ) U_r[i]</code>.</li>
+            </ul>
+
+            <h3>Engine B: Neural 384-D Transformer (<code>Xenova/all-MiniLM-L6-v2</code>)</h3>
+            <ul>
+              <li>Runs quantized ONNX (<code>q8</code>) inside a dedicated Web Worker via WebGPU (automatic WASM fallback) with mean pooling and L₂ normalization into <code>S^383</code>.</li>
+              <li>Both corpus items and the full lexicon are embedded in the same pretrained semantic geometry, capturing deep paraphrase/synonym equivalence beyond lexical overlap.</li>
+            </ul>
+          </section>
+
+          <section id="s-gravity" data-toc="2. Node Gravity &amp; Projection Fidelity">
+            <h2>2. Trusting "Node Gravity" &amp; Inter-Node Space</h2>
+            <p>
+              A core pitfall in visual analytics is mistaking 2D layout artifacts for real geometric structure. VoidLens decouples <strong>high-dimensional measurement</strong> from <strong>2D visualization</strong>:
+            </p>
+            <ul>
+              <li><strong>All Core Computations Occur in Full R<sup>d</sup>:</strong> Spherical KDE, Vietoris–Rips <code>H₀/H₁</code> persistence, spherical <code>k</code>-Means++, Burt constraint, nearest-neighbor distances, and orthogonal concept decoding are computed strictly from the full <code>d</code>-dimensional vectors—never from 2D pixel coordinates (the lone 2D-seeded generator, Delaunay/Voronoi circumcenters, is RBF-lifted back onto <code>S^(d−1)</code> and scored in full <code>R^d</code>).</li>
+              <li><strong>Projection Options:</strong>
+                <ul>
+                  <li><code>UMAP Manifold</code>: Initializes from Exact PCA (preserving deterministic global orientation), constructs a symmetric fuzzy simplicial <code>k</code>-NN graph <code>Pᵢⱼ = pᵢ|ⱼ + pⱼ|ᵢ − pᵢ|ⱼpⱼ|ᵢ</code> with binary-searched local bandwidth <code>σᵢ</code> matching <code>log₂(k)</code>, and optimizes attractive/repulsive manifold forces with distance-weighted repulsion to preserve inter-cluster cavities.</li>
+                  <li><code>Exact PCA</code>: Dual-Gram centered PCA projecting onto exact primal axes <code>PC₁, PC₂</code>, reporting exact <code>PC₁ + PC₂</code> variance explained and the top-12 eigenvalue scree spectrum.</li>
+                </ul>
+              </li>
+              <li><strong>Real-Time Distortion Diagnostics (Top-Left Stage Badges):</strong>
+                <ul>
+                  <li><strong>Venna &amp; Kaski (2001) Trustworthiness <code>T(k) ∈ [0, 1]</code>:</strong> Penalizes "false neighbors" that appear close in 2D but are distant in <code>R^d</code>:<br />
+                    <code>T(k) = 1 − [2 / (N k (2N − 3k − 1))] Σᵢ Σ_{j ∈ U_k(i)} (r(i, j) − k)</code><br />
+                    <em>Interpretation:</em> <code>T(k) ≥ 0.85</code> indicates high local faithfulness; <code>&lt; 0.70</code> warns that 2D neighborhoods contain fold-over illusions.</li>
+                  <li><strong>Scale-Invariant Kruskal Stress-1:</strong><br />
+                    <code>Stress₁ = sqrt( Σ (d_H(i,j) − α·d_L(i,j))² / Σ d_H(i,j)² )</code><br />
+                    <em>Interpretation:</em> <code>&lt; 0.15</code> excellent global metric preservation; <code>0.15–0.28</code> fair; <code>&gt; 0.30</code> rely on the k-NN graph overlay and R<sup>d</sup> cosine tables rather than raw 2D Euclidean spans.</li>
+                </ul>
+              </li>
+            </ul>
+          </section>
+
+          <section id="s-validity" data-toc="3. Mathematical Gap Detection &amp; TDA">
+            <h2>3. Four Independent Candidate Generators &amp; Validity Criteria</h2>
+            <p>
+              To avoid single-heuristic bias, VoidLens synthesizes candidate gap vectors <code>g ∈ S^(d−1)</code> via four complementary geometric/topological mechanisms, then applies spherical + 2D Non-Maximum Suppression (<code>d_cos &lt; 0.14</code> or <code>d_2D &lt; 0.18</code>):
+            </p>
+
+            <ol>
+              <li>
+                <strong>Vietoris–Rips Persistent Homology (<code>h1-cavity</code>):</strong>
+                Builds the filtered 2-skeleton on pairwise cosine distances <code>Dᵢⱼ = 1 − vᵢᵀvⱼ</code>. <code>H₀</code> is computed via Kruskal Union-Find; <code>H₁</code> is computed via exact left-to-right column reduction of the boundary matrix <code>∂₂</code> over <code>ℤ₂</code> (Edelsbrunner–Letscher–Zomorodian 2002). Each non-trivial birth-death pair <code>(b, d)</code> yields persistence <code>p = d − b</code>, and the reduced killer column directly returns the exact bounding 1-cycle of corpus vertices. Its intrinsic <strong>Karcher/Fréchet mean</strong> on <code>S^(d−1)</code> defines the cavity center.
+              </li>
+              <li>
+                <strong>von Mises–Fisher (vMF) KDE &amp; Riemannian Descent (<code>riemannian-min</code>):</strong>
+                Models spherical density via shifted vMF kernel estimation:<br />
+                <code>f̂_κ(x) = (1/N) Σᵢ exp(κ (xᵀvᵢ − 1)) ∈ (0, 1]</code><br />
+                Candidate seeds descend the regularized log-density energy <code>E(x) = ln(f̂_κ(x) + ε) + λ_hull (1 − xᵀμ_domain)²</code> using Riemannian tangent-space gradients:<br />
+                <code>∇_S E(x) = ∇E(x) − (xᵀ ∇E(x)) x</code><br />
+                with geodesic retraction onto <code>S^(d−1)</code>. The <code>λ_hull = 2.6</code> restoring force guarantees valleys stay inside the domain's semantic convex support instead of escaping to orthogonal nonsense.
+              </li>
+              <li>
+                <strong>Inter-Cluster Geodesic Bridges (<code>geodesic-bridge</code>):</strong>
+                Partitions <code>S^(d−1)</code> via multi-restart Spherical <code>k</code>-Means++ (maximizing total cosine cohesion) and computes great-circle SLERP midpoints <code>slerp(μₐ, μ_b, 0.5)</code> between all distinct cluster pairs, plus Burt's Structural-Hole Constraint <code>Cᵢ = Σⱼ (pᵢⱼ + Σ_q pᵢ_q p_qj)²</code> on the cluster affinity graph.
+              </li>
+              <li>
+                <strong>Bowyer–Watson Delaunay &amp; α-Shape Voids (<code>voronoi-void</code>):</strong>
+                Computes exact 2D Delaunay triangulation, rejects hull-boundary sliver triangles outside the α-radius quantile, lifts top interior Voronoi circumcenters back to <code>S^(d−1)</code> via Gaussian RBF weighted Fréchet means, and blends with the spherical mean of the bounding triangle vertices.
+              </li>
+            </ol>
+          </section>
+
+          <section id="s-scoring" data-toc="4. Exact Scoring Equations">
+            <h2>4. Composite White-Space Index &amp; Metric Definitions</h2>
+            <p>Every auto-discovered gap, manual Void Probe (<code>⊕</code>), and Vector Algebra target (<code>∑</code>) is evaluated identically on <code>S^(d−1)</code>:</p>
+
+            <div class="formula-block">
+              <code>Opportunity(g) = Gate(Coherence) × [ w₁·Sparsity + w₂·BridgeEntropy + w₃·Coherence + w₄·TopoPersistence ] / Σw</code><br />
+              <code>Gate(Coherence) = 0.40 + 0.60 · Coherence^0.6</code>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Metric</th>
+                    <th>Exact Formula / Operational Definition</th>
+                    <th>Purpose</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>Sparsity</strong> (<code>w₁ = 0.38</code>)</td>
+                    <td><code>0.58 · clip(d_min / (1.15 · d̄_pair)) + 0.42 · (1 − ρ_norm)</code> where <code>d_min = minᵢ(1 − gᵀvᵢ)</code> and <code>ρ_norm</code> normalizes <code>f̂_κ(g)</code> to corpus range.</td>
+                    <td>Combines hard empty-ball radius with smooth spherical density scarcity.</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Bridge Entropy</strong> (<code>w₂ = 0.30</code>)</td>
+                    <td>Normalized Shannon entropy <code>H = −Σ_c p_c ln(p_c) / ln(min(4, K))</code> over softmax-weighted cluster shares of the top-10 neighbors (<code>β = 6.5</code>).</td>
+                    <td>Quantifies Burt-style structural hole bridging across distinct clusters.</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Domain Coherence</strong> (<code>w₃ = 0.18</code>)</td>
+                    <td><code>clip( [0.5·max(0, gᵀμ_dom) + 0.5·mean_top5(gᵀvᵢ)] / max(0.28, 1 − 0.55·d̄_pair) )</code>. Also drives the multiplicative <code>Gate</code>.</td>
+                    <td>Prevents out-of-distribution outer-space vectors from achieving high scores.</td>
+                  </tr>
+                  <tr>
+                    <td><strong>H₁ Persistence</strong> (<code>w₄ = 0.14</code>)</td>
+                    <td><code>max_c [ (pers_c / pers_max) · max(0, gᵀbary_c)³ ]</code> across the top-12 persistent <code>H₁</code> cycles.</td>
+                    <td>Rewards gaps aligned with verified topological cavities in full <code>R^d</code>.</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Vector Algebra</strong> (<code>∑</code>)</td>
+                    <td><code>g = normalize( embed(A) + embed(B) − 0.65 · embed(C) )</code>, projected via exact PCA or Nadaraya–Watson geodesic kernel barycenters (<code>k = 7</code>).</td>
+                    <td>Hypothesis-driven probing of compositional concepts in the manifold.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="s-inversion" data-toc="5. Orthogonal Concept Inversion">
+            <h2>5. The Inverse Problem: Decoding a Gap Vector Without an LLM</h2>
+            <p>
+              A point <code>g ∈ S^(d−1)</code> has no intrinsic text label. To decode what is <em>missing</em> at <code>g</code> rather than merely echoing its existing neighbors, VoidLens performs <strong>Modified Gram–Schmidt Orthogonal Residual Projection</strong>:
+            </p>
+            <div class="formula-block">
+              <code>B = orthonormalize( {v_{i₁}, v_{i₂}, v_{i₃}, v_{i₄}} )   // top-4 nearest existing offerings</code><br />
+              <code>g_⊥ = normalize( g − Σ_{q ∈ B} (gᵀq) q )             // novel orthogonal residual</code><br />
+              <code>Score(l_m) = 0.52·max(0, gᵀl_m) + 0.28·max(0, g_⊥ᵀl_m) + 0.20·novelty_m·((gᵀl_m + 1)/2)</code><br />
+              <code>novelty_m = 1 − maxᵢ( l_mᵀvᵢ )                        // corpus saturation penalty</code>
+            </div>
+            <p>
+              This penalizes capabilities already saturated in the corpus and elevates cross-domain primitives aligned specifically with the unspanned directions of the void.
+            </p>
+          </section>
+
+          <section id="s-limits" data-toc="6. Scientific Limitations &amp; Validation Protocol">
+            <h2>6. Epistemic Limits &amp; Rigorous Validation Checklist</h2>
+            <p>
+              Every statistical discovery tool has well-defined boundaries. Keep these five failure modes explicit when interpreting outputs:
+            </p>
+            <ul>
+              <li><strong>Corpus Selection Bias (Closed-World Assumption):</strong> A gap is strictly relative to the <em>ingested corpus</em> <code>{x₁, …, xₙ}</code>. Proprietary stealth products, paywalled patents, or topics underrepresented on OpenAlex/Wikipedia/HN/GitHub can produce <em>sampling voids</em> rather than true market voids. Always merge domain-specific specs via <code>Corpus (N)</code> before drawing strategic conclusions.</li>
+              <li><strong>Closed Lexicon Ceiling in Inversion:</strong> Orthogonal Concept Inversion ranks primitives from VoidLens's curated ~70-concept cross-domain lexicon. If the true missing capability lies outside this dictionary, treat the decoded terms as <em>directional analogies</em> and use <code>Copy Brief</code> to synthesize further with an external LLM or domain expert.</li>
+              <li><strong>Concentration of Measure in High Dimensions:</strong> In <code>S^383</code> (MiniLM), pairwise cosine distances concentrate tightly around the mean; that is why VoidLens normalizes <code>Sparsity</code> against the corpus's empirical <code>d̄_pair</code> and <code>vMF</code> density range, and lets you tune concentration <code>κ</code>.</li>
+              <li><strong>Lexical vs. Semantic Gaps:</strong> In <code>LSA-SVD</code> mode, two synonyms without shared character 4-grams can look artificially distant. Always verify high-priority voids after toggling <strong>Neural 384-D</strong>.</li>
+              <li><strong>Structural Hole ≠ Commercial Viability:</strong> Persistent homology proves topological emptiness in representation space—it does <em>not</em> distinguish between an untapped breakthrough and an infeasible, uneconomic, or regulatorily barred combination.</li>
+            </ul>
+          </section>
+        </article>
+      </main>
+    </div>
+
+    <script type="module" src="/src/manual.ts"></script>
+  </body>
+</html>
