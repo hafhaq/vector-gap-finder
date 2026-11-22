@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VoidLens — Vector-Space Idea Gap &amp; Structural Hole Finder</title>
+    <meta
+      name="description"
+      content="100% client-side scientific white-space &amp; untapped niche finder using Transformer/SVD embeddings, Vietoris-Rips H1 Persistent Homology, vMF Spherical KDE, and Orthogonal Residual Concept Inversion."
+    />
+  </head>
+  <body>
+    <div class="app-shell">
+      <!-- Compact single-row observatory header -->
+      <header class="top-bar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">◈</span>
+          <div>
+            <h1>VoidLens</h1>
+            <span class="brand-sub">Vector-Space Gap &amp; Structural-Hole Observatory</span>
+          </div>
+        </div>
+
+        <div class="header-controls">
+          <label class="sr-only" for="preset-select">Domain Preset</label>
+          <select id="preset-select" class="ctrl-select" title="Switch starter domain corpus"></select>
+
+          <button type="button" id="btn-harvest" class="btn btn-primary">
+            <span aria-hidden="true">⌕</span> Live Web Harvest
+          </button>
+
+          <button type="button" id="btn-corpus" class="btn btn-ghost">
+            Edit Corpus (<span id="corpus-count">0</span>)
+          </button>
+
+          <button type="button" id="btn-neural" class="btn btn-accent" title="Upgrade from instant SVD-LSA to 384-d MiniLM-L6-v2 Transformer embeddings (WebGPU/WASM)">
+            <span id="neural-dot" class="status-dot"></span>
+            <span id="neural-label">Enable Neural 384-D</span>
+          </button>
+
+          <button type="button" id="btn-science" class="btn btn-ghost" title="Mathematical methodology &amp; formulas">
+            Math &amp; TDA
+          </button>
+        </div>
+      </header>
+
+      <!-- Left Panel: Ranked Untapped Gaps + Controls + Vector Algebra -->
+      <aside class="panel panel-left" aria-label="Discovered Gaps and Controls">
+        <div class="panel-header">
+          <h2>Untapped Vector Voids</h2>
+          <span id="engine-badge" class="pill pill-cyan">LSA-SVD</span>
+        </div>
+
+        <div id="neural-progress-bar" class="progress-banner" hidden>
+          <div class="progress-text" id="neural-progress-text">Loading MiniLM-L6-v2…</div>
+          <div class="progress-track"><div class="progress-fill" id="neural-progress-fill"></div></div>
+        </div>
+
+        <div id="gap-list" class="gap-list" role="list"></div>
+
+        <!-- Collapsible Vector Algebra Sandbox (A + B - C) -->
+        <details class="tool-drawer">
+          <summary>Vector Algebra Lab (A + B − C)</summary>
+          <div class="drawer-body">
+            <p class="hint">
+              Compose explicit concept arithmetic on the unit hypersphere S<sup>d−1</sup> to test if a combination lands in an untapped void or a crowded cluster.
+            </p>
+            <label class="field-label">
+              <span>+ Concept A</span>
+              <input type="text" id="alg-a" class="ctrl-input" placeholder="e.g. deterministic real-time PLC control" />
+            </label>
+            <label class="field-label">
+              <span>+ Concept B</span>
+              <input type="text" id="alg-b" class="ctrl-input" placeholder="e.g. zero-knowledge cryptographic proof" />
+            </label>
+            <label class="field-label">
+              <span>− Subtract C (optional)</span>
+              <input type="text" id="alg-c" class="ctrl-input" placeholder="e.g. cloud latency vendor lock-in" />
+            </label>
+            <button type="button" id="btn-run-algebra" class="btn btn-primary btn-full">
+              Project &amp; Evaluate Vector
+            </button>
+          </div>
+        </details>
+
+        <!-- Collapsible Scientific Parameters -->
+        <details class="tool-drawer">
+          <summary>Scientific Weights &amp; Parameters</summary>
+          <div class="drawer-body">
+            <div class="seg-row">
+              <span>2D Projection</span>
+              <div class="seg-group" role="group" aria-label="2D projection method">
+                <button type="button" class="seg-btn active" data-proj="manifold">UMAP Manifold</button>
+                <button type="button" class="seg-btn" data-proj="pca">Exact PCA</button>
+              </div>
+            </div>
+
+            <label class="slider-field">
+              <span class="slider-top"><span>Clusters (k-Means++)</span><output id="val-k">6</output></span>
+              <input type="range" id="param-k" min="3" max="9" step="1" value="6" />
+            </label>
+
+            <label class="slider-field">
+              <span class="slider-top"><span>vMF Concentration (κ)</span><output id="val-kappa">6.0</output></span>
+              <input type="range" id="param-kappa" min="2" max="14" step="0.5" value="6" />
+            </label>
+
+            <hr class="divider" />
+
+            <label class="slider-field">
+              <span class="slider-top"><span>w₁ Sparsity / Empty Ball</span><output id="val-w-sparsity">0.38</output></span>
+              <input type="range" id="w-sparsity" min="0" max="1" step="0.02" value="0.38" />
+            </label>
+
+            <label class="slider-field">
+              <span class="slider-top"><span>w₂ Bridge Entropy (Structural Hole)</span><output id="val-w-bridge">0.30</output></span>
+              <input type="range" id="w-bridge" min="0" max="1" step="0.02" value="0.30" />
+            </label>
+
+            <label class="slider-field">
+              <span class="slider-top"><span>w₃ Domain Coherence (Hull)</span><output id="val-w-coherence">0.18</output></span>
+              <input type="range" id="w-coherence" min="0" max="1" step="0.02" value="0.18" />
+            </label>
+
+            <label class="slider-field">
+              <span class="slider-top"><span>w₄ H₁ Topological Persistence</span><output id="val-w-topo">0.14</output></span>
+              <input type="range" id="w-topo" min="0" max="1" step="0.02" value="0.14" />
+            </label>
+          </div>
+        </details>
+      </aside>
+
+      <!-- Center Main Stage: Interactive 2D Semantic Manifold Observatory -->
+      <main class="stage" aria-label="Interactive Vector Manifold Map">
+        <div class="stage-toolbar">
+          <div class="layer-pills" role="group" aria-label="Map visual layers">
+            <label class="chip"><input type="checkbox" id="layer-density" checked /> vMF Density</label>
+            <label class="chip"><input type="checkbox" id="layer-delaunay" checked /> Delaunay</label>
+            <label class="chip"><input type="checkbox" id="layer-h1" checked /> H₁ Loops</label>
+            <label class="chip"><input type="checkbox" id="layer-knn" /> k-NN Graph</label>
+            <label class="chip"><input type="checkbox" id="layer-labels" checked /> Clusters</label>
+            <label class="chip"><input type="checkbox" id="layer-gaps" checked /> Gap Beacons</label>
+          </div>
+
+          <div class="stage-actions">
+            <button type="button" id="btn-probe-mode" class="btn btn-sm btn-ghost" aria-pressed="false" title="Click anywhere in empty space (or Shift+Click) to lift &amp; decode that exact vector">
+              ⊕ Probe Void
+            </button>
+            <button type="button" id="btn-reset-view" class="btn btn-sm btn-ghost">Reset View</button>
+          </div>
+        </div>
+
+        <div class="canvas-wrap">
+          <canvas id="manifold-canvas" aria-label="2D semantic vector manifold showing existing ideas and detected untapped gaps"></canvas>
+          <div id="canvas-tooltip" class="canvas-tooltip" aria-hidden="true"></div>
+          <div id="stage-metrics" class="stage-metrics"></div>
+          <div class="probe-hint">Drag to pan · Scroll to zoom · <strong>Shift+Click</strong> any empty void to probe &amp; decode its vector</div>
+        </div>
+      </main>
+
+      <!-- Right Panel: Selected Gap / Concept Inspector + TDA Diagnostics -->
+      <aside class="panel panel-right" aria-label="Inspector and Topological Diagnostics">
+        <div class="panel-header">
+          <h2 id="inspector-heading">Gap Inspector</h2>
+          <button type="button" id="btn-copy-brief" class="btn btn-sm btn-ghost" title="Copy structured mathematical brief for LLM synthesis or sharing">
+            Copy Brief
+          </button>
+        </div>
+
+        <div id="inspector-content" class="inspector-content"></div>
+
+        <details class="tool-drawer" open>
+          <summary>TDA Persistence Diagram &amp; Spectrum</summary>
+          <div class="drawer-body">
+            <p class="hint">
+              Exact Vietoris–Rips persistent homology in full R<sup>d</sup>. Purple H₁ dots far above the diagonal represent true multi-concept cavities; hover to highlight on map.
+            </p>
+            <div id="persistence-chart" class="chart-box"></div>
+            <div id="scree-chart" class="chart-box"></div>
+          </div>
+        </details>
+
+        <details class="tool-drawer">
+          <summary>Cluster Topology &amp; Burt Constraint</summary>
+          <div id="cluster-list" class="drawer-body cluster-list"></div>
+        </details>
+      </aside>
+    </div>
+
+    <!-- Modal 1: Live Client-Side Web Search Harvester -->
+    <dialog id="harvest-dialog" closedby="any" aria-labelledby="harvest-title">
+      <div class="dialog-head">
+        <h2 id="harvest-title">Live Client-Side Web Search Harvester</h2>
+        <form method="dialog"><button class="btn-icon" value="cancel" aria-label="Close">✕</button></form>
+      </div>
+      <div class="dialog-body">
+        <p class="hint">
+          Fetches real documents directly from CORS-enabled open knowledge APIs right in your browser (zero backend required), embeds them on the hypersphere, and discovers fresh structural holes.
+        </p>
+        <label class="field-label">
+          <span>Domain / Technology Search Query</span>
+          <input
+            type="search"
+            id="harvest-query"
+            class="ctrl-input"
+            autofocus
+            placeholder="e.g. industrial PLC deterministic edge AI 2026"
+          />
+        </label>
+
+        <fieldset class="source-grid">
+          <legend>Open Client-Side Sources</legend>
+          <label class="source-card">
+            <input type="checkbox" name="harvest-source" value="openalex" checked />
+            <div>
+              <strong>OpenAlex Research (2022–2026)</strong>
+              <span>250M+ engineering papers &amp; abstracts</span>
+            </div>
+          </label>
+          <label class="source-card">
+            <input type="checkbox" name="harvest-source" value="wikipedia" checked />
+            <div>
+              <strong>Wikipedia Technical Concepts</strong>
+              <span>Canonical architectures &amp; standards</span>
+            </div>
+          </label>
+          <label class="source-card">
+            <input type="checkbox" name="harvest-source" value="hackernews" checked />
+            <div>
+              <strong>Hacker News Discussions</strong>
+              <span>Real practitioner pain points &amp; launches</span>
+            </div>
+          </label>
+          <label class="source-card">
+            <input type="checkbox" name="harvest-source" value="github" checked />
+            <div>
+              <strong>GitHub Repositories</strong>
+              <span>Active open-source tools &amp; capabilities</span>
+            </div>
+          </label>
+        </fieldset>
+
+        <div class="harvest-options">
+          <label class="inline-check">
+            <input type="radio" name="harvest-mode" value="replace" checked /> Replace current corpus
+          </label>
+          <label class="inline-check">
+            <input type="radio" name="harvest-mode" value="merge" /> Merge into current corpus
+          </label>
+        </div>
+
+        <div id="harvest-status" class="status-log" hidden></div>
+
+        <div class="dialog-actions">
+          <form method="dialog"><button class="btn btn-ghost" value="cancel">Cancel</button></form>
+          <button type="button" id="btn-execute-harvest" class="btn btn-primary">
+            Harvest &amp; Map Vector Space
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- Modal 2: Corpus Editor & Import/Export -->
+    <dialog id="corpus-dialog" closedby="any" aria-labelledby="corpus-title">
+      <div class="dialog-head">
+        <h2 id="corpus-title">Corpus Manager &amp; Custom Import</h2>
+        <form method="dialog"><button class="btn-icon" value="cancel" aria-label="Close">✕</button></form>
+      </div>
+      <div class="dialog-body">
+        <p class="hint">
+          Paste any sea of ideas, competitor capabilities, patent abstracts, or search snippets below — one per line as <code>Title: Description</code> (or plain sentences). You can also import/export JSON.
+        </p>
+        <label class="field-label">
+          <span>Corpus Lines (Title: Summary)</span>
+          <textarea id="corpus-textarea" class="ctrl-textarea" rows="12" autofocus></textarea>
+        </label>
+        <div class="dialog-actions">
+          <div class="left-actions">
+            <button type="button" id="btn-export-json" class="btn btn-ghost btn-sm">Export JSON</button>
+            <label class="btn btn-ghost btn-sm file-btn">
+              Import JSON
+              <input type="file" id="input-import-json" accept=".json" hidden />
+            </label>
+          </div>
+          <div class="right-actions">
+            <form method="dialog"><button class="btn btn-ghost" value="cancel">Cancel</button></form>
+            <button type="button" id="btn-apply-corpus" class="btn btn-primary">
+              Re-Embed &amp; Find Gaps
+            </button>
+          </div>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- Modal 3: Scientific Methodology & Equations -->
+    <dialog id="science-dialog" closedby="any" aria-labelledby="science-title">
+      <div class="dialog-head">
+        <h2 id="science-title">The Science Behind VoidLens</h2>
+        <form method="dialog"><button class="btn-icon" value="cancel" aria-label="Close">✕</button></form>
+      </div>
+      <div class="dialog-body science-doc">
+        <section>
+          <h3>1. Hyperspherical Embedding Space (S<sup>d−1</sup>)</h3>
+          <p>
+            Every offering is mapped onto the unit hypersphere either instantaneously via <strong>Sublinear TF-IDF + Character 4-Gram Dual-Gram Truncated SVD (LSA)</strong> or upgraded in a Web Worker to <strong>384-D Neural Transformer embeddings</strong> (<code>Xenova/all-MiniLM-L6-v2</code> running locally via WebGPU/WASM).
+          </p>
+        </section>
+        <section>
+          <h3>2. Why 2D Alone Lies — Full High-Dimensional Void Detection</h3>
+          <p>
+            Projecting 384-D space into 2D inevitably distorts distances. VoidLens displays exact <strong>Venna–Kaski Trustworthiness T(k)</strong> and <strong>Kruskal Stress-1</strong> so you always see projection fidelity, while running all core density, topology, and void scoring directly in full <strong>R<sup>d</sup></strong>.
+          </p>
+        </section>
+        <section>
+          <h3>3. Exact Vietoris–Rips Persistent Homology (H₀ &amp; H₁ TDA)</h3>
+          <p>
+            Using boundary matrix column reduction (∂₂ over ℤ₂), VoidLens detects <strong>1-dimensional persistent topological cycles (H₁)</strong> in the cosine distance filtration. A high-persistence cycle (death − birth) proves a genuine ring of existing capabilities surrounding an empty interior cavity. The Fréchet mean on S<sup>d−1</sup> of the bounding cycle locates the cavity center.
+          </p>
+        </section>
+        <section>
+          <h3>4. von Mises–Fisher (vMF) KDE &amp; Riemannian Gradient Descent</h3>
+          <p>
+            We estimate semantic probability density on S<sup>d−1</sup> via spherical kernel density <code>f̂_κ(x) = (1/N) Σ exp(κ(x·vᵢ − 1))</code>. Candidate voids (H₁ barycenters, inter-cluster SLERP bridges, and Bowyer–Watson α-shape Voronoi centers) are refined via <strong>Riemannian tangent-space gradient descent</strong> to settle into true local density valleys while remaining inside the domain support hull.
+          </p>
+        </section>
+        <section>
+          <h3>5. Structural Hole Bridge Entropy &amp; Orthogonal Concept Inversion</h3>
+          <p>
+            Following Ronald Burt's Structural Holes theory, valuable gaps bridge distinct capability clusters (high Shannon entropy over neighbor clusters). To read an untapped vector <strong>g</strong> back into human language without a backend LLM, we compute the <strong>Modified Gram–Schmidt orthogonal residual</strong> <code>g⊥ = g − proj_span(N(g))(g)</code> and score cross-domain capability primitives by direct alignment, residual novelty, and low corpus saturation.
+          </p>
+        </section>
+        <div class="dialog-actions">
+          <form method="dialog"><button class="btn btn-primary" value="ok" autofocus>Got It</button></form>
+        </div>
+      </div>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
