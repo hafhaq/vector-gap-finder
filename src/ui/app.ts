@@ -120,32 +120,50 @@ export class VoidLensApp {
     }
   }
 
-  private populatePresets(): void {
+  private populatePresets(activeCustomTopic?: string): void {
     const select = this.el<HTMLSelectElement>('preset-select');
-    select.innerHTML = PRESET_DATASETS.map(
-      (p) => `<option value="${p.id}">${p.name}</option>`
-    ).join('');
+    const customOpt = activeCustomTopic
+      ? `<option value="__live__" selected>★ Live: ${escapeHtml(activeCustomTopic)}</option>`
+      : '';
+    select.innerHTML =
+      customOpt +
+      PRESET_DATASETS.map((p) => `<option value="${p.id}">${p.name}</option>`).join('') +
+      `<option value="__new__">+ New Research Topic…</option>`;
   }
 
   private bindUI(): void {
-    // Preset switcher
-    this.el<HTMLSelectElement>('preset-select').addEventListener('change', (e) => {
-      const id = (e.target as HTMLSelectElement).value;
-      this.loadPreset(id);
-    });
-
-    // Modals
     const harvestDlg = this.el<HTMLDialogElement>('harvest-dialog');
     const corpusDlg = this.el<HTMLDialogElement>('corpus-dialog');
     const scienceDlg = this.el<HTMLDialogElement>('science-dialog');
 
+    // Direct inline Quick Research bar in header (Enter or click Research)
+    this.el<HTMLFormElement>('quick-research-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = this.el<HTMLInputElement>('quick-topic-input');
+      const query = input.value.trim();
+      if (!query) {
+        this.openHarvestDialog('');
+        return;
+      }
+      input.blur(); // dismiss mobile keyboard so map is immediately visible
+      await this.runLiveResearch(query, ['openalex', 'wikipedia', 'hackernews', 'github'], 'replace');
+    });
+
+    // Preset switcher (includes "+ New Research Topic…")
+    this.el<HTMLSelectElement>('preset-select').addEventListener('change', (e) => {
+      const sel = e.target as HTMLSelectElement;
+      if (sel.value === '__new__') {
+        this.openHarvestDialog('');
+        return;
+      }
+      if (sel.value === '__live__') return;
+      this.loadPreset(sel.value);
+    });
+
+    // Modals
     this.el('btn-harvest').addEventListener('click', () => {
-      const preset = PRESET_DATASETS.find(
-        (p) => p.id === this.el<HTMLSelectElement>('preset-select').value
-      );
-      const qInput = this.el<HTMLInputElement>('harvest-query');
-      if (!qInput.value.trim() && preset) qInput.value = preset.defaultQuery;
-      harvestDlg.showModal();
+      const currentQuick = this.el<HTMLInputElement>('quick-topic-input').value.trim();
+      this.openHarvestDialog(currentQuick);
     });
 
     this.el('btn-corpus').addEventListener('click', () => {
@@ -156,8 +174,20 @@ export class VoidLensApp {
 
     this.el('btn-science').addEventListener('click', () => scienceDlg.showModal());
 
-    // Live Web Harvest execution
-    this.el('btn-execute-harvest').addEventListener('click', () => this.executeWebHarvest(harvestDlg));
+    // Live Web Harvest modal form submit (works on Enter / mobile Search key / button tap!)
+    this.el<HTMLFormElement>('harvest-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.executeWebHarvest(harvestDlg);
+    });
+
+    // One-tap example topic pills inside harvest modal
+    document.querySelectorAll<HTMLButtonElement>('.topic-pill').forEach((pill) => {
+      pill.addEventListener('click', () => {
+        const topic = pill.dataset.topic ?? '';
+        this.el<HTMLInputElement>('harvest-query').value = topic;
+        this.executeWebHarvest(harvestDlg);
+      });
+    });
 
     // Corpus Apply / Export / Import
     this.el('btn-apply-corpus').addEventListener('click', () => {
@@ -168,6 +198,7 @@ export class VoidLensApp {
         return;
       }
       corpusDlg.close();
+      this.populatePresets('Custom Corpus');
       this.setCorpus(parsed);
       this.showToast(`Embedded ${parsed.length} custom concepts & recalculated voids.`);
     });
@@ -200,6 +231,7 @@ export class VoidLensApp {
             }));
           if (imported.length >= 5) {
             corpusDlg.close();
+            this.populatePresets(file.name.replace(/\.json$/i, ''));
             this.setCorpus(imported);
             this.showToast(`Imported ${imported.length} items from JSON.`);
           }
@@ -303,9 +335,22 @@ export class VoidLensApp {
     this.el('btn-copy-brief').addEventListener('click', () => this.copyActiveBrief());
   }
 
+  private openHarvestDialog(initialQuery: string): void {
+    const dlg = this.el<HTMLDialogElement>('harvest-dialog');
+    const qInput = this.el<HTMLInputElement>('harvest-query');
+    const statusBox = this.el('harvest-status');
+    qInput.value = initialQuery;
+    statusBox.hidden = true;
+    statusBox.textContent = '';
+    dlg.showModal();
+    qInput.focus();
+  }
+
   private loadPreset(presetId: string): void {
     const preset = PRESET_DATASETS.find((p) => p.id === presetId) ?? PRESET_DATASETS[0];
-    this.el<HTMLInputElement>('harvest-query').value = preset.defaultQuery;
+    this.populatePresets();
+    this.el<HTMLSelectElement>('preset-select').value = preset.id;
+    this.el<HTMLInputElement>('quick-topic-input').value = '';
     // Populate illustrative Vector Algebra defaults for PLC preset
     if (preset.id === 'industrial-plc-2026') {
       this.el<HTMLInputElement>('alg-a').value = 'deterministic real-time PLC safety control';
@@ -567,10 +612,77 @@ export class VoidLensApp {
     this.showToast(`Vector algebra projected — White-Space Index ${(evaluated.opportunityScore * 100).toFixed(0)}%.`);
   }
 
+  private async runLiveResearch(
+    query: string,
+    sources: WebSourceId[],
+    mode: 'replace' | 'merge',
+    dialog?: HTMLDialogElement
+  ): Promise<void> {
+    const quickBtn = this.el<HTMLButtonElement>('btn-quick-research');
+    const modalBtn = this.el<HTMLButtonElement>('btn-execute-harvest');
+    const statusBox = this.el('harvest-status');
+
+    quickBtn.disabled = true;
+    modalBtn.disabled = true;
+    this.showNeuralProgress(`Harvesting "${query}" across ${sources.length} open sources…`, 20);
+    if (dialog?.open) {
+      statusBox.hidden = false;
+      statusBox.textContent = `Querying ${sources.join(', ')} for "${query}"…\n`;
+    }
+
+    let completed = 0;
+    try {
+      const harvested = await harvestWebCorpus(query, sources, 13, (p) => {
+        if (p.status === 'done' || p.status === 'error') {
+          completed++;
+          const pct = 20 + Math.round((completed / sources.length) * 70);
+          this.showNeuralProgress(
+            p.status === 'done'
+              ? `Fetched ${p.fetched} from ${p.source} (${completed}/${sources.length})…`
+              : `${p.source} skipped (${p.message}), continuing…`,
+            pct
+          );
+        }
+        if (dialog?.open) {
+          if (p.status === 'done') {
+            statusBox.textContent += `✓ ${p.source}: fetched ${p.fetched} items\n`;
+          } else if (p.status === 'error') {
+            statusBox.textContent += `✗ ${p.source}: ${p.message}\n`;
+          }
+        }
+      });
+
+      if (harvested.length < 5 && mode === 'replace') {
+        this.hideNeuralProgress();
+        const msg = `Only ${harvested.length} items returned for "${query}" — try broader keywords or Merge mode.`;
+        if (dialog?.open) statusBox.textContent += `\n${msg}`;
+        this.showToast(msg);
+        return;
+      }
+
+      const finalItems =
+        mode === 'merge' ? [...this.items, ...harvested].slice(0, 120) : harvested.slice(0, 100);
+      dialog?.close();
+      this.el<HTMLInputElement>('quick-topic-input').value = query;
+      this.populatePresets(query);
+      await this.setCorpus(finalItems);
+      this.hideNeuralProgress();
+      this.showToast(
+        `Mapped ${finalItems.length} live concepts for "${query}" — found ${this.engineOutput?.result.gaps.length ?? 0} gaps!`
+      );
+    } catch (err) {
+      this.hideNeuralProgress();
+      this.showToast(`Research harvest failed: ${err instanceof Error ? err.message : 'network error'}`);
+    } finally {
+      quickBtn.disabled = false;
+      modalBtn.disabled = false;
+    }
+  }
+
   private async executeWebHarvest(dialog: HTMLDialogElement): Promise<void> {
     const query = this.el<HTMLInputElement>('harvest-query').value.trim();
     if (!query) {
-      this.showToast('Please enter a search query.');
+      this.showToast('Please enter a research topic.');
       return;
     }
     const sources = Array.from(
@@ -583,37 +695,10 @@ export class VoidLensApp {
     }
 
     const mode =
-      document.querySelector<HTMLInputElement>('input[name="harvest-mode"]:checked')?.value ??
-      'replace';
-    const statusBox = this.el('harvest-status');
-    const btn = this.el<HTMLButtonElement>('btn-execute-harvest');
-    statusBox.hidden = false;
-    statusBox.textContent = `Querying ${sources.join(', ')} for "${query}"…\n`;
-    btn.disabled = true;
-
-    try {
-      const harvested = await harvestWebCorpus(query, sources, 13, (p) => {
-        if (p.status === 'done') {
-          statusBox.textContent += `✓ ${p.source}: fetched ${p.fetched} items\n`;
-        } else if (p.status === 'error') {
-          statusBox.textContent += `✗ ${p.source}: ${p.message}\n`;
-        }
-      });
-
-      if (harvested.length < 5 && mode === 'replace') {
-        statusBox.textContent += `\nOnly ${harvested.length} items returned — try broader keywords or Merge mode.`;
-        btn.disabled = false;
-        return;
-      }
-
-      const finalItems =
-        mode === 'merge' ? [...this.items, ...harvested].slice(0, 120) : harvested.slice(0, 100);
-      dialog.close();
-      await this.setCorpus(finalItems);
-      this.showToast(`Harvested ${harvested.length} live web concepts & discovered ${this.engineOutput?.result.gaps.length ?? 0} gaps!`);
-    } finally {
-      btn.disabled = false;
-    }
+      (document.querySelector<HTMLInputElement>('input[name="harvest-mode"]:checked')?.value as
+        | 'replace'
+        | 'merge') ?? 'replace';
+    await this.runLiveResearch(query, sources, mode, dialog);
   }
 
   private renderStageMetrics(): void {

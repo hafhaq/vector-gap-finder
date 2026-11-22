@@ -115,7 +115,56 @@ body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
+.quick-research-form {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 240px;
+  max-inline-size: 380px;
+}
+
+.quick-topic-input {
+  flex: 1 1 auto;
+  min-inline-size: 140px;
+}
+
+.harvest-input-row {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.harvest-input-row .ctrl-input {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.topic-examples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.38rem;
+  font-size: 0.72rem;
+  color: var(--text-2);
+}
+
+.topic-pill {
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--cyan);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.topic-pill:hover {
+  border-color: var(--cyan);
+  background: rgba(56, 189, 248, 0.14);
 }
 
 /* Panels */
@@ -1179,10 +1228,17 @@ dialog::backdrop {
   .header-controls {
     inline-size: 100%;
     gap: 0.4rem;
+    justify-content: flex-start;
+  }
+
+  .quick-research-form {
+    flex: 1 1 100%;
+    max-inline-size: none;
   }
 
   .ctrl-select {
-    flex: 1 1 100%;
+    flex: 1 1 auto;
+    min-inline-size: 0;
   }
 
   .stage-toolbar {

@@ -29,39 +29,80 @@ function reconstructOpenAlexAbstract(inverted?: Record<string, number[]>): strin
   return words.map((w) => w[1]).join(' ').slice(0, 460);
 }
 
-async function fetchOpenAlex(query: string, limit: number): Promise<CorpusItem[]> {
-  const url = `https://api.openalex.org/works?search=${encodeURIComponent(query)}&per-page=${limit}&sort=relevance_score:desc&filter=from_publication_date:2022-01-01`;
+async function fetchCrossrefFallback(query: string, limit: number): Promise<CorpusItem[]> {
+  const url = `https://api.crossref.org/works?query=${encodeURIComponent(query)}&rows=${limit}&sort=relevance&order=desc`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`OpenAlex HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`Crossref HTTP ${res.status}`);
   const data = await res.json();
   const items: CorpusItem[] = [];
-  for (const work of data.results ?? []) {
-    const title = (work.display_name ?? '').trim();
+  for (const work of data?.message?.items ?? []) {
+    const title = (Array.isArray(work.title) ? work.title[0] : work.title ?? '').trim();
     if (!title) continue;
-    const abstract = reconstructOpenAlexAbstract(work.abstract_inverted_index);
-    const concepts = (work.concepts ?? [])
-      .slice(0, 5)
-      .map((c: { display_name: string }) => c.display_name);
-    const summary =
-      abstract.length > 40
-        ? abstract
-        : `Research publication (${work.publication_year ?? 2026}) covering ${concepts.join(', ') || query}.`;
+    const rawAbs = String(work.abstract ?? '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const subjects: string[] = Array.isArray(work.subject) ? work.subject.slice(0, 4) : [];
+    const year = work.published?.['date-parts']?.[0]?.[0];
     items.push({
-      id: `oa-${work.id?.split('/').pop() ?? Math.random().toString(36).slice(2, 8)}`,
+      id: `cr-${work.DOI ? work.DOI.replace(/[^a-z0-9]/gi, '').slice(0, 14) : Math.random().toString(36).slice(2, 9)}`,
       title,
-      summary,
-      category: concepts[0] ?? 'Research Paper',
-      source: 'OpenAlex',
-      url: work.doi || work.id,
-      year: work.publication_year,
-      tags: concepts,
+      summary:
+        rawAbs.length > 30
+          ? rawAbs.slice(0, 460)
+          : `Peer-reviewed publication (${year ?? 'recent'}) covering ${subjects.join(', ') || query}.`,
+      category: subjects[0] ?? 'Research Paper',
+      source: 'Crossref',
+      url: work.URL || (work.DOI ? `https://doi.org/${work.DOI}` : undefined),
+      year,
+      tags: subjects,
     });
   }
   return items;
 }
 
+async function fetchOpenAlex(query: string, limit: number): Promise<CorpusItem[]> {
+  try {
+    const url = `https://api.openalex.org/works?search=${encodeURIComponent(query)}&per-page=${limit}&sort=relevance_score:desc&filter=from_publication_date:2022-01-01`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`OpenAlex HTTP ${res.status}`);
+    const data = await res.json();
+    const items: CorpusItem[] = [];
+    for (const work of data.results ?? []) {
+      const title = (work.display_name ?? '').trim();
+      if (!title) continue;
+      const abstract = reconstructOpenAlexAbstract(work.abstract_inverted_index);
+      const concepts = (work.concepts ?? [])
+        .slice(0, 5)
+        .map((c: { display_name: string }) => c.display_name);
+      const summary =
+        abstract.length > 40
+          ? abstract
+          : `Research publication (${work.publication_year ?? 2026}) covering ${concepts.join(', ') || query}.`;
+      items.push({
+        id: `oa-${work.id?.split('/').pop() ?? Math.random().toString(36).slice(2, 8)}`,
+        title,
+        summary,
+        category: concepts[0] ?? 'Research Paper',
+        source: 'OpenAlex',
+        url: work.doi || work.id,
+        year: work.publication_year,
+        tags: concepts,
+      });
+    }
+    if (items.length >= 3) return items;
+    // Fallback to Crossref if OpenAlex had sparse hits
+    const cr = await fetchCrossrefFallback(query, limit);
+    return items.length > 0 ? [...items, ...cr] : cr;
+  } catch {
+    // Graceful Crossref fallback if OpenAlex IP budget or network fails
+    return fetchCrossrefFallback(query, limit);
+  }
+}
+
 async function fetchWikipedia(query: string, limit: number): Promise<CorpusItem[]> {
-  const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srlimit=${limit}&format=json&origin=*`;
+  const cleanQuery = query.replace(/\b20\d{2}\b/g, '').trim() || query;
+  const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&srlimit=${limit}&format=json&origin=*`;
   const searchRes = await fetch(searchUrl);
   if (!searchRes.ok) throw new Error(`Wikipedia HTTP ${searchRes.status}`);
   const searchData = await searchRes.json();
@@ -118,7 +159,8 @@ async function fetchHackerNews(query: string, limit: number): Promise<CorpusItem
 }
 
 async function fetchGitHub(query: string, limit: number): Promise<CorpusItem[]> {
-  const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(query)}&sort=stars&order=desc&per_page=${limit}`;
+  const cleanQuery = query.replace(/\b20\d{2}\b/g, '').trim() || query;
+  const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(cleanQuery)}&sort=stars&order=desc&per_page=${limit}`;
   const res = await fetch(url, {
     headers: { Accept: 'application/vnd.github+json' },
   });

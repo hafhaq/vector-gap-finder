@@ -22,24 +22,39 @@
         </div>
 
         <div class="header-controls">
-          <label class="sr-only" for="preset-select">Domain Preset</label>
-          <select id="preset-select" class="ctrl-select" title="Switch starter domain corpus"></select>
+          <form id="quick-research-form" class="quick-research-form" role="search">
+            <label class="sr-only" for="quick-topic-input">Start a new research topic</label>
+            <input
+              type="search"
+              id="quick-topic-input"
+              class="ctrl-input quick-topic-input"
+              placeholder="New research topic… e.g. solid state batteries"
+              enterkeyhint="search"
+              autocomplete="off"
+            />
+            <button type="submit" id="btn-quick-research" class="btn btn-primary">
+              <span aria-hidden="true">⌕</span> Research
+            </button>
+          </form>
 
-          <button type="button" id="btn-harvest" class="btn btn-primary">
-            <span aria-hidden="true">⌕</span> Live Web Harvest
+          <label class="sr-only" for="preset-select">Domain Preset</label>
+          <select id="preset-select" class="ctrl-select" title="Switch starter domain or active live topic"></select>
+
+          <button type="button" id="btn-harvest" class="btn btn-ghost" title="Choose web sources or merge into current corpus">
+            Sources
           </button>
 
           <button type="button" id="btn-corpus" class="btn btn-ghost">
-            Edit Corpus (<span id="corpus-count">0</span>)
+            Corpus (<span id="corpus-count">0</span>)
           </button>
 
           <button type="button" id="btn-neural" class="btn btn-accent" title="Upgrade from instant SVD-LSA to 384-d MiniLM-L6-v2 Transformer embeddings (WebGPU/WASM)">
             <span id="neural-dot" class="status-dot"></span>
-            <span id="neural-label">Enable Neural 384-D</span>
+            <span id="neural-label">Neural 384-D</span>
           </button>
 
           <button type="button" id="btn-science" class="btn btn-ghost" title="Mathematical methodology &amp; formulas">
-            Math &amp; TDA
+            Math
           </button>
         </div>
       </header>
@@ -196,30 +211,43 @@
     <!-- Modal 1: Live Client-Side Web Search Harvester -->
     <dialog id="harvest-dialog" closedby="any" aria-labelledby="harvest-title">
       <div class="dialog-head">
-        <h2 id="harvest-title">Live Client-Side Web Search Harvester</h2>
+        <h2 id="harvest-title">New Research Topic — Live Web Harvest</h2>
         <form method="dialog"><button class="btn-icon" value="cancel" aria-label="Close">✕</button></form>
       </div>
-      <div class="dialog-body">
+      <form id="harvest-form" class="dialog-body">
         <p class="hint">
-          Fetches real documents directly from CORS-enabled open knowledge APIs right in your browser (zero backend required), embeds them on the hypersphere, and discovers fresh structural holes.
+          Enter any technology, industry, or niche. VoidLens fetches live papers, articles, discussions, and repos right in your browser and maps the untapped gaps.
         </p>
-        <label class="field-label">
-          <span>Domain / Technology Search Query</span>
+
+        <div class="harvest-input-row">
+          <label class="sr-only" for="harvest-query">Domain or Technology Search Query</label>
           <input
             type="search"
             id="harvest-query"
             class="ctrl-input"
             autofocus
-            placeholder="e.g. industrial PLC deterministic edge AI 2026"
+            enterkeyhint="search"
+            placeholder="e.g. solid state batteries, surgical robotics, edge AI…"
           />
-        </label>
+          <button type="submit" id="btn-execute-harvest" class="btn btn-primary">
+            Harvest &amp; Map
+          </button>
+        </div>
+
+        <div class="topic-examples" aria-label="Example topics">
+          <span>Try:</span>
+          <button type="button" class="topic-pill" data-topic="solid state batteries">Solid-State Batteries</button>
+          <button type="button" class="topic-pill" data-topic="autonomous surgical robotics">Surgical Robotics</button>
+          <button type="button" class="topic-pill" data-topic="small modular nuclear reactors">SMR Nuclear</button>
+          <button type="button" class="topic-pill" data-topic="precision agriculture drones">Agri-Drones</button>
+        </div>
 
         <fieldset class="source-grid">
           <legend>Open Client-Side Sources</legend>
           <label class="source-card">
             <input type="checkbox" name="harvest-source" value="openalex" checked />
             <div>
-              <strong>OpenAlex Research (2022–2026)</strong>
+              <strong>OpenAlex / Crossref Research</strong>
               <span>250M+ engineering papers &amp; abstracts</span>
             </div>
           </label>
@@ -256,14 +284,7 @@
         </div>
 
         <div id="harvest-status" class="status-log" hidden></div>
-
-        <div class="dialog-actions">
-          <form method="dialog"><button class="btn btn-ghost" value="cancel">Cancel</button></form>
-          <button type="button" id="btn-execute-harvest" class="btn btn-primary">
-            Harvest &amp; Map Vector Space
-          </button>
-        </div>
-      </div>
+      </form>
     </dialog>
 
     <!-- Modal 2: Corpus Editor & Import/Export -->
